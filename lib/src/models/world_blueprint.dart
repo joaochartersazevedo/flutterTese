@@ -1,20 +1,29 @@
+import 'area.dart';
+import 'character.dart';
+import 'connection.dart';
+import 'dialogue.dart';
+import 'event.dart';
+import 'state_flag.dart';
+import 'task.dart';
+
 class WorldBlueprint {
   const WorldBlueprint({
-    required this.id,
-    required this.name,
+    required this.startingAreaId,
     required this.areas,
-    required this.characters,
-    required this.stateFlags,
     required this.connections,
-    required this.events,
+    required this.characters,
+    required this.gamestates,
     required this.dialogues,
+    required this.tasks,
+    required this.events,
   });
-  final String id;
-  final String name;
-  final List<String> areas;
-  final List<String> characters;
-  final List<String> stateFlags;
-  final List<String> connections;
-  final List<String> events;
-  final List<String> dialogues;
+
+  final int startingAreaId;
+  final Map<int, Area> areas;
+  final Map<int, Connection> connections;
+  final Map<int, Character> characters;
+  final Map<int, StateFlag> gamestates;
+  final Map<int, Dialogue> dialogues;
+  final Map<int, Task> tasks;
+  final Map<int, Event> events;
 }

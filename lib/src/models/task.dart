@@ -12,29 +12,27 @@ class Task {
     this.completed = false,
   });
 
-  final String id;
+  final int id;
   final String name;
   final int session;
   final int section;
-  final String areaId;
+  final int areaId;
   final bool singleTrigger;
   final Map<int, bool> preconditions;
   final Map<int, bool> consequences;
   final bool active;
   final bool completed;
 
-  Task copyWith({bool? active, bool? completed}) {
-    return Task(
-      id: id,
-      name: name,
-      session: session,
-      section: section,
-      areaId: areaId,
-      singleTrigger: singleTrigger,
-      preconditions: preconditions,
-      consequences: consequences,
-      active: active ?? this.active,
-      completed: completed ?? this.completed,
-    );
-  }
+  Task copyWith({bool? active, bool? completed}) => Task(
+        id: id,
+        name: name,
+        session: session,
+        section: section,
+        areaId: areaId,
+        singleTrigger: singleTrigger,
+        preconditions: preconditions,
+        consequences: consequences,
+        active: active ?? this.active,
+        completed: completed ?? this.completed,
+      );
 }

@@ -8,10 +8,27 @@ class Character {
     required this.bodyPath,
   });
 
-  final String id;
+  final int id;
   final String name;
   final String colorHex;
   final String portraitPath;
-  final String areaId;
+  final int areaId;
   final String bodyPath;
+
+  Character copyWith({
+    String? name,
+    String? colorHex,
+    String? portraitPath,
+    int? areaId,
+    String? bodyPath,
+  }) {
+    return Character(
+      id: id,
+      name: name ?? this.name,
+      colorHex: colorHex ?? this.colorHex,
+      portraitPath: portraitPath ?? this.portraitPath,
+      areaId: areaId ?? this.areaId,
+      bodyPath: bodyPath ?? this.bodyPath,
+    );
+  }
 }

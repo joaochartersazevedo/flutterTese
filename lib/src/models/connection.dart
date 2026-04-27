@@ -7,20 +7,15 @@ class Connection {
     this.locked = false,
   });
 
-  final String id;
+  final int id;
   final int areaA;
   final int areaB;
   final int travelMinutes;
   final bool locked;
 
-  int destinationFor(int origin) {
-    if (origin == areaA) {
-      return areaB;
-    }
-    return areaA;
-  }
+  int destinationFor(int origin) => origin == areaA ? areaB : areaA;
 
-  Connection copyWith({bool? locked, int? travelMinutes}) {
+  Connection copyWith({int? travelMinutes, bool? locked}) {
     return Connection(
       id: id,
       areaA: areaA,

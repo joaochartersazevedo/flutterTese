@@ -1,34 +1,32 @@
-import 'dart:math';
-
 import '../domain/models.dart';
 
-GameWorldBlueprint buildSeedWorld() {
-  final areas = <int, GameArea>{
-    1: const GameArea(
+WorldBlueprint buildSeedWorld() {
+  final areas = <int, Area>{
+    1: const Area(
       id: 1,
       name: 'Escadas 1',
       backgroundPath: 'editor/areas/area (1).jpg',
       connectionIds: [1, 2],
     ),
-    2: const GameArea(
+    2: const Area(
       id: 2,
       name: 'Escadas 2',
       backgroundPath: 'editor/areas/area (2).jpg',
       connectionIds: [1, 3, 4],
     ),
-    3: const GameArea(
+    3: const Area(
       id: 3,
       name: 'Corredor A',
       backgroundPath: 'editor/areas/area (3).jpg',
       connectionIds: [2, 5],
     ),
-    4: const GameArea(
+    4: const Area(
       id: 4,
       name: 'Sala A',
       backgroundPath: 'editor/areas/area (4).jpg',
       connectionIds: [3],
     ),
-    5: const GameArea(
+    5: const Area(
       id: 5,
       name: 'Patio',
       backgroundPath: 'editor/areas/area (5).jpg',
@@ -36,66 +34,16 @@ GameWorldBlueprint buildSeedWorld() {
     ),
   };
 
-  final connections = <int, GameConnection>{
-    1: const GameConnection(
-      id: 1,
-      areaA: 1,
-      areaB: 2,
-      travelMinutes: 5,
-      iconIdle: 'editor/connections/blue.png',
-      iconHover: 'editor/connections/cyan.png',
-      iconPosition: Point(0.85, 0.25),
-      iconRotation: 90,
-      iconScale: 1.4,
-    ),
-    2: const GameConnection(
-      id: 2,
-      areaA: 1,
-      areaB: 3,
-      travelMinutes: 4,
-      iconIdle: 'editor/connections/red.png',
-      iconHover: 'editor/connections/magenta.png',
-      iconPosition: Point(0.65, 0.65),
-      iconRotation: 40,
-      iconScale: 1.1,
-    ),
-    3: const GameConnection(
-      id: 3,
-      areaA: 2,
-      areaB: 4,
-      travelMinutes: 3,
-      iconIdle: 'editor/connections/green.png',
-      iconHover: 'editor/connections/yellow.png',
-      iconPosition: Point(0.70, 0.55),
-      iconRotation: 180,
-      iconScale: 1.2,
-    ),
-    4: const GameConnection(
-      id: 4,
-      areaA: 2,
-      areaB: 5,
-      travelMinutes: 6,
-      iconIdle: 'editor/connections/default.png',
-      iconHover: 'editor/connections/blue.png',
-      iconPosition: Point(0.90, 0.70),
-      iconRotation: 0,
-      iconScale: 1.0,
-    ),
-    5: const GameConnection(
-      id: 5,
-      areaA: 3,
-      areaB: 5,
-      travelMinutes: 8,
-      iconIdle: 'editor/connections/cyan.png',
-      iconHover: 'editor/connections/green.png',
-      iconPosition: Point(0.45, 0.80),
-      iconRotation: 220,
-      iconScale: 1.0,
-    ),
+  final connections = <int, Connection>{
+    1: const Connection(id: 1, areaA: 1, areaB: 2, travelMinutes: 5),
+    2: const Connection(id: 2, areaA: 1, areaB: 3, travelMinutes: 4),
+    3: const Connection(id: 3, areaA: 2, areaB: 4, travelMinutes: 3),
+    4: const Connection(id: 4, areaA: 2, areaB: 5, travelMinutes: 6),
+    5: const Connection(id: 5, areaA: 3, areaB: 5, travelMinutes: 8),
   };
 
-  final characters = <int, GameCharacter>{
-    1: const GameCharacter(
+  final characters = <int, Character>{
+    1: const Character(
       id: 1,
       name: 'Afonso',
       colorHex: '#11a7ef',
@@ -103,7 +51,7 @@ GameWorldBlueprint buildSeedWorld() {
       areaId: 3,
       bodyPath: 'editor/bodies/body (1).png',
     ),
-    2: const GameCharacter(
+    2: const Character(
       id: 2,
       name: 'Bruna',
       colorHex: '#f0298a',
@@ -111,7 +59,7 @@ GameWorldBlueprint buildSeedWorld() {
       areaId: 4,
       bodyPath: 'editor/bodies/body (2).png',
     ),
-    3: const GameCharacter(
+    3: const Character(
       id: 3,
       name: 'Diogo',
       colorHex: '#26c96d',
@@ -121,16 +69,16 @@ GameWorldBlueprint buildSeedWorld() {
     ),
   };
 
-  final gamestates = <int, GameStateFlag>{
-    1: const GameStateFlag(id: 1, name: 'Falei com Afonso', value: false),
-    2: const GameStateFlag(id: 2, name: 'Falei com Bruna', value: false),
-    3: const GameStateFlag(id: 3, name: 'Conversa videogames ativa', value: false),
-    4: const GameStateFlag(id: 4, name: 'Task estudo concluida', value: false),
-    5: const GameStateFlag(id: 5, name: 'Patio trancado por evento', value: false),
+  final gamestates = <int, StateFlag>{
+    1: const StateFlag(id: 1, name: 'Falei com Afonso', value: false),
+    2: const StateFlag(id: 2, name: 'Falei com Bruna', value: false),
+    3: const StateFlag(id: 3, name: 'Conversa videogames ativa', value: false),
+    4: const StateFlag(id: 4, name: 'Task estudo concluida', value: false),
+    5: const StateFlag(id: 5, name: 'Patio trancado por evento', value: false),
   };
 
-  final dialogues = <int, GameDialogue>{
-    1: const GameDialogue(
+  final dialogues = <int, Dialogue>{
+    1: const Dialogue(
       id: 1,
       name: 'Ice Cream',
       type: DialogueType.chat,
@@ -144,7 +92,7 @@ GameWorldBlueprint buildSeedWorld() {
       consequences: {1: true},
       priority: 3,
     ),
-    2: const GameDialogue(
+    2: const Dialogue(
       id: 2,
       name: 'Football',
       type: DialogueType.chat,
@@ -158,7 +106,7 @@ GameWorldBlueprint buildSeedWorld() {
       consequences: {2: true},
       priority: 2,
     ),
-    3: const GameDialogue(
+    3: const Dialogue(
       id: 3,
       name: 'Videogames',
       type: DialogueType.chat,
@@ -172,7 +120,7 @@ GameWorldBlueprint buildSeedWorld() {
       consequences: {3: true},
       priority: 1,
     ),
-    4: const GameDialogue(
+    4: const Dialogue(
       id: 4,
       name: 'Conversa com Afonso',
       type: DialogueType.playerChat,
@@ -190,26 +138,21 @@ GameWorldBlueprint buildSeedWorld() {
     ),
   };
 
-  final tasks = <int, GameTask>{
-    1: const GameTask(
+  final tasks = <int, Task>{
+    1: const Task(
       id: 1,
       name: 'Rever apontamentos',
       session: 1,
       section: 1,
       areaId: 4,
-      iconIdle: 'editor/task_icons/book.png',
-      iconHover: 'editor/task_icons/books.png',
-      iconPosition: Point(0.55, 0.70),
-      iconRotation: 0,
-      iconScale: 1.0,
       singleTrigger: true,
       preconditions: {1: true},
       consequences: {4: true},
     ),
   };
 
-  final events = <int, GameEvent>{
-    1: const GameEvent(
+  final events = <int, Event>{
+    1: const Event(
       id: 1,
       name: 'Lock Patio',
       type: EventType.disableArea,
@@ -220,7 +163,7 @@ GameWorldBlueprint buildSeedWorld() {
     ),
   };
 
-  return GameWorldBlueprint(
+  return WorldBlueprint(
     startingAreaId: 1,
     areas: areas,
     connections: connections,
