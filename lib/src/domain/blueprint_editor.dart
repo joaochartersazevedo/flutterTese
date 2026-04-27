@@ -12,6 +12,20 @@ import '../models/task.dart';
 import '../models/world_blueprint.dart';
 
 class BlueprintEditor extends ChangeNotifier {
+  BlueprintEditor() {
+    _ensurePlayer();
+  }
+
+  static const int playerId = 0;
+  static const Character defaultPlayer = Character(
+    id: playerId,
+    name: 'Jogador',
+    colorHex: '#009900',
+    portraitPath: '',
+    areaId: 0,
+    bodyPath: '',
+  );
+
   final Map<int, Area> areas = {};
   final Map<int, Connection> connections = {};
   final Map<int, Character> characters = {};
@@ -106,6 +120,7 @@ class BlueprintEditor extends ChangeNotifier {
   }
 
   void removeCharacter(int id) {
+    if (id == playerId) return;
     characters.remove(id);
     notifyListeners();
   }
@@ -217,6 +232,12 @@ class BlueprintEditor extends ChangeNotifier {
     _nextTaskId = maxId(tasks.keys) + 1;
     _nextEventId = maxId(events.keys) + 1;
 
+    _ensurePlayer();
+
     notifyListeners();
+  }
+
+  void _ensurePlayer() {
+    characters.putIfAbsent(playerId, () => defaultPlayer);
   }
 }

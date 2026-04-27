@@ -133,6 +133,11 @@ class DialogueAiService {
     return (await _call(prompt, maxTokens: 100)).trim();
   }
 
+  /// Generate a single line from a custom prompt (emotion responses, context-aware).
+  Future<String> generateLine(String prompt) async {
+    return (await _call(prompt, maxTokens: 150)).trim();
+  }
+
   /// Generate a full scripted dialogue given character names and context.
   Future<List<({String speaker, String text})>> generateDialogueTree({
     required List<String> characterNames,

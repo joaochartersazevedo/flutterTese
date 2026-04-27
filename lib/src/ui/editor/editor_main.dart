@@ -196,7 +196,8 @@ class _CharacterTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = editor.characters.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+    final items = editor.characters.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
     return _ImageGrid<Character>(
       items: items,
       onAdd: () async {
@@ -208,7 +209,9 @@ class _CharacterTab extends StatelessWidget {
       },
       cardBuilder: (context, char) => _CharacterCard(
         character: char,
-        areaName: editor.areas[char.areaId]?.name ?? 'Area ${char.areaId}',
+        areaName: char.id == BlueprintEditor.playerId
+            ? 'Jogador'
+            : (editor.areas[char.areaId]?.name ?? 'Area ${char.areaId}'),
         onEdit: () async {
           final result = await Navigator.push<Character>(
             context,
@@ -217,8 +220,13 @@ class _CharacterTab extends StatelessWidget {
           );
           if (result != null) editor.updateCharacter(result);
         },
-        onDelete: () =>
-            _confirmDelete(context, char.name, () => editor.removeCharacter(char.id)),
+        onDelete: char.id == BlueprintEditor.playerId
+            ? null
+            : () => _confirmDelete(
+                context,
+                char.name,
+                () => editor.removeCharacter(char.id),
+              ),
       ),
     );
   }
@@ -523,13 +531,13 @@ class _CharacterCard extends StatelessWidget {
     required this.character,
     required this.areaName,
     required this.onEdit,
-    required this.onDelete,
+    this.onDelete,
   });
 
   final Character character;
   final String areaName;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
 
   static final _resolver = RenpyAssetResolver.auto();
 
@@ -615,13 +623,14 @@ class _CharacterCard extends StatelessWidget {
                         visualDensity: VisualDensity.compact,
                         tooltip: 'Editar',
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 15),
-                        color: AppColors.error,
-                        onPressed: onDelete,
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Eliminar',
-                      ),
+                      if (onDelete != null)
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 15),
+                          color: AppColors.error,
+                          onPressed: onDelete,
+                          visualDensity: VisualDensity.compact,
+                          tooltip: 'Eliminar',
+                        ),
                     ],
                   ),
                 ],

@@ -1,54 +1,32 @@
-import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as p;
 
 import '../../data/dialogue_ai_service.dart';
 import '../../data/renpy_asset_resolver.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/character.dart';
 import '../../models/dialogue.dart';
+import '../../models/emotion.dart';
 import '../../models/state_flag.dart';
 import '../app_theme.dart';
+import '../game/emotion_wheel.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Emotion wheel data — matches player_interaction.rpy EMOTION_WHEEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EmotionDef {
-  const _EmotionDef(this.id, this.name, this.color, this.desc, this.dx, this.dy);
+  const _EmotionDef(this.id, this.name, this.color);
   final int id;
   final String name;
   final Color color;
-  final String desc;
-  final double dx; // offset from center
-  final double dy;
 }
 
-const _emotions = <_EmotionDef>[
-  _EmotionDef( 0, 'Alert',     Color(0xFFFFD700), 'attentive and mildly engaged',            85,  -85),
-  _EmotionDef( 1, 'Happy',     Color(0xFF90EE90), 'cheerful and warm',                      120,    0),
-  _EmotionDef( 2, 'Contented', Color(0xFF98FB98), 'satisfied and gently at ease',             85,   85),
-  _EmotionDef( 3, 'Relaxed',   Color(0xFF87CEEB), 'calm and rested',                           0,  120),
-  _EmotionDef( 4, 'Fatigued',  Color(0xFFC8C8C8), 'tired and low energy',                    -85,   85),
-  _EmotionDef( 5, 'Sad',       Color(0xFF6495ED), 'melancholic and subdued',                -120,    0),
-  _EmotionDef( 6, 'Upset',     Color(0xFFFF6347), 'bothered and mildly frustrated',           -85,  -85),
-  _EmotionDef( 7, 'Nervous',   Color(0xFFFFA500), 'on edge and mildly apprehensive',            0, -120),
-  _EmotionDef( 8, 'Excited',   Color(0xFFFFD700), 'enthusiastic, energetic and eager',       141, -141),
-  _EmotionDef( 9, 'Elated',    Color(0xFF90EE90), 'overjoyed and euphoric',                 200,    0),
-  _EmotionDef(10, 'Serene',    Color(0xFF98FB98), 'deeply peaceful and fulfilled',           141,  141),
-  _EmotionDef(11, 'Calm',      Color(0xFF87CEEB), 'tranquil and completely at ease',           0,  200),
-  _EmotionDef(12, 'Lethargic', Color(0xFFC8C8C8), 'deeply exhausted and disengaged',        -141,  141),
-  _EmotionDef(13, 'Depressed', Color(0xFF6495ED), 'deeply sorrowful and without hope',      -200,    0),
-  _EmotionDef(14, 'Angry',     Color(0xFFFF6347), 'confrontational, forceful and intense',  -141, -141),
-  _EmotionDef(15, 'Tense',     Color(0xFFFFA500), 'overwhelmed, panicked and anxious',         0, -200),
-];
-
-// Portrait emotion labels (index = emotionId for DialogueLine)
-const _portraitEmotionLabels = [
-  'Neutral', 'Happy', 'Sad', 'Angry', 'Surprised', 'Confused', 'Shy',
-];
+final List<_EmotionDef> _emotions = emotionWheel
+    .map((e) => _EmotionDef(e.id, e.label, _hexColorOrWhite(e.color)))
+    .toList();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main screen
@@ -597,10 +575,11 @@ class _LineCardState extends State<_LineCard> {
                     underline: const SizedBox.shrink(),
                     style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
                     items: [
-                      const DropdownMenuItem(
-                          value: 0,
-                          child: Text('Jogador',
-                              style: TextStyle(color: Color(0xFF009900)))),
+                      if (!widget.chars.any((c) => c.id == 0))
+                        const DropdownMenuItem(
+                            value: 0,
+                            child: Text('Jogador',
+                                style: TextStyle(color: Color(0xFF009900)))),
                       ...widget.chars.map((c) => DropdownMenuItem(
                             value: c.id,
                             child: Text(c.name),
@@ -625,10 +604,7 @@ class _LineCardState extends State<_LineCard> {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
             child: _EmotionPicker(
-              speakerId: widget.line.speakerId,
-              portraitPath: char?.portraitPath ?? '',
               emotionId: widget.line.emotionId,
-              resolver: widget.resolver,
               onChanged: (e) => setState(() => widget.line.emotionId = e),
             ),
           ),
@@ -717,84 +693,42 @@ class _LineCardState extends State<_LineCard> {
 
 class _EmotionPicker extends StatelessWidget {
   const _EmotionPicker({
-    required this.speakerId,
-    required this.portraitPath,
     required this.emotionId,
-    required this.resolver,
     required this.onChanged,
   });
 
-  final int speakerId;
-  final String portraitPath;
   final int emotionId;
-  final RenpyAssetResolver resolver;
   final void Function(int) onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final current = getEmotion(emotionId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Emoção:',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
-        const SizedBox(width: 8),
-        ...List.generate(7, (i) {
-          final isSelected = emotionId == i;
-          // Try to load portrait emotion thumbnail
-          final thumbPath = _emotionPortraitPath(i);
-          final thumbFile = thumbPath != null ? File(thumbPath) : null;
-          final hasThumb = thumbFile != null && thumbFile.existsSync();
-
-          return Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Tooltip(
-              message: _portraitEmotionLabels[i],
-              child: GestureDetector(
-                onTap: () => onChanged(i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: isSelected ? AppColors.primary : AppColors.border,
-                      width: isSelected ? 2 : 1,
-                    ),
-                    color: isSelected
-                        ? AppColors.primaryDim
-                        : AppColors.surfaceHighlight,
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: hasThumb
-                      ? Image.file(thumbFile, fit: BoxFit.cover)
-                      : Center(
-                          child: Text(
-                            '$i',
-                            style: TextStyle(
-                              color: isSelected
-                                  ? AppColors.primaryLight
-                                  : AppColors.textMuted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                ),
-              ),
+        Row(
+          children: [
+            const Text('Emoção:',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            const SizedBox(width: 8),
+            Text(
+              current.label,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
             ),
-          );
-        }),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: 200,
+          height: 200,
+          child: EmotionWheel(
+                    size: 420,
+                    selectedEmotionId: emotionId,
+            onEmotionSelected: onChanged,
+          ),
+        ),
       ],
     );
-  }
-
-  String? _emotionPortraitPath(int eid) {
-    if (portraitPath.isEmpty || speakerId == 0) return null;
-    final stem = p.basenameWithoutExtension(portraitPath);
-    final dir = p.dirname(portraitPath);
-    final rel = p.join(dir, stem, 'portrait ($eid).png');
-    if (resolver.exists(rel)) return resolver.resolve(rel);
-    return null;
   }
 }
 
@@ -894,7 +828,7 @@ class _PlayerChatEditorState extends State<_PlayerChatEditor> {
         ? widget.playerEmotions[_selectedEmotionId]
         : null;
     final selectedDef =
-        _selectedEmotionId != null ? _emotions[_selectedEmotionId!] : null;
+      _selectedEmotionId != null ? _emotions[_selectedEmotionId!] : null;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1081,10 +1015,11 @@ class _EmotionWheel extends StatelessWidget {
   final void Function(int) onTap;
   final void Function(int) onDoubleTap;
 
-  static const _size = 400.0;
+  static const _size = 560.0;
   static const _cx = _size / 2;
   static const _cy = _size / 2;
-  static const _dotRadius = 18.0;
+  static const _dotRadius = 20.0;
+  static const _padding = 26.0;
 
   @override
   Widget build(BuildContext context) {
@@ -1094,11 +1029,16 @@ class _EmotionWheel extends StatelessWidget {
       child: Stack(
         children: [
           // Background rings
-          CustomPaint(size: const Size(_size, _size), painter: _WheelPainter()),
+          CustomPaint(
+            size: const Size(_size, _size),
+            painter: _WheelPainter(scale: (_size / 2) - _dotRadius - _padding),
+          ),
           // Emotion dots
           ..._emotions.map((e) {
-            final x = _cx + e.dx;
-            final y = _cy + e.dy;
+            final scale = (_size / 2) - _dotRadius - _padding;
+            final angle = (2 * math.pi * e.id / _emotions.length) - (math.pi / 2);
+            final x = _cx + (math.cos(angle) * scale);
+            final y = _cy + (math.sin(angle) * scale);
             final isActive = playerEmotions.containsKey(e.id);
             final isSelected = selectedId == e.id;
             final hasText = isActive &&
@@ -1109,7 +1049,7 @@ class _EmotionWheel extends StatelessWidget {
               left: x - _dotRadius,
               top: y - _dotRadius,
               child: Tooltip(
-                message: '${e.name} — ${e.desc}\n'
+                message: '${e.name}\n'
                     '${isActive ? "Duplo-click para desativar" : "Click para ativar"}',
                 child: GestureDetector(
                   onTap: () => onTap(e.id),
@@ -1177,6 +1117,10 @@ class _EmotionWheel extends StatelessWidget {
 }
 
 class _WheelPainter extends CustomPainter {
+  _WheelPainter({required this.scale});
+
+  final double scale;
+
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2;
@@ -1186,15 +1130,15 @@ class _WheelPainter extends CustomPainter {
     // Outer ring guide
     paint.color = AppColors.border;
     paint.strokeWidth = 1;
-    canvas.drawCircle(Offset(cx, cy), 200 + 20, paint);
+    canvas.drawCircle(Offset(cx, cy), scale + 10, paint);
 
     // Inner ring guide
-    canvas.drawCircle(Offset(cx, cy), 120 + 10, paint);
+    canvas.drawCircle(Offset(cx, cy), (scale * 0.6) + 6, paint);
 
     // Axis lines
     paint.color = AppColors.border.withValues(alpha: 0.4);
-    canvas.drawLine(Offset(cx - 200, cy), Offset(cx + 200, cy), paint);
-    canvas.drawLine(Offset(cx, cy - 200), Offset(cx, cy + 200), paint);
+    canvas.drawLine(Offset(cx - scale, cy), Offset(cx + scale, cy), paint);
+    canvas.drawLine(Offset(cx, cy - scale), Offset(cx, cy + scale), paint);
 
     // Center dot
     paint.style = PaintingStyle.fill;
@@ -1308,7 +1252,7 @@ class _BranchEditorState extends State<_BranchEditor> {
               ),
               const SizedBox(width: 8),
               Text(
-                def.id < 8 ? '(fraco)' : '(forte)',
+                'Posicao no circulo',
                 style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
               const Spacer(),
@@ -1345,7 +1289,7 @@ class _BranchEditorState extends State<_BranchEditor> {
           ),
           const SizedBox(height: 4),
           Text(
-            def.desc,
+            'Emocoes distribuidas em circulo.',
             style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 24),

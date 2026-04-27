@@ -21,6 +21,7 @@ class _AddCharacterScreenState extends State<AddCharacterScreen> {
   late String _portraitPath;
   late String _bodyPath;
   late int? _areaId;
+  late bool _isPlayer;
 
   @override
   void initState() {
@@ -31,6 +32,7 @@ class _AddCharacterScreenState extends State<AddCharacterScreen> {
     _portraitPath = e?.portraitPath ?? '';
     _bodyPath = e?.bodyPath ?? '';
     _areaId = e?.areaId;
+    _isPlayer = e?.id == BlueprintEditor.playerId;
   }
 
   @override
@@ -50,7 +52,7 @@ class _AddCharacterScreenState extends State<AddCharacterScreen> {
         name: _name.text.trim(),
         colorHex: _color.text.trim(),
         portraitPath: _portraitPath,
-        areaId: _areaId ?? 0,
+        areaId: _isPlayer ? 0 : (_areaId ?? 0),
         bodyPath: _bodyPath,
       ),
     );
@@ -82,17 +84,21 @@ class _AddCharacterScreenState extends State<AddCharacterScreen> {
               const SizedBox(height: 16),
               _ColorField(controller: _color),
               const SizedBox(height: 16),
-              if (areas.isNotEmpty)
-                DropdownButtonFormField<int>(
-                  value: areas.any((a) => a.id == _areaId) ? _areaId : null,
-                  decoration: const InputDecoration(labelText: 'Area inicial'),
-                  items: areas
-                      .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
-                      .toList(),
-                  onChanged: (v) => setState(() => _areaId = v),
-                )
+              if (!_isPlayer)
+                if (areas.isNotEmpty)
+                  DropdownButtonFormField<int>(
+                    value: areas.any((a) => a.id == _areaId) ? _areaId : null,
+                    decoration: const InputDecoration(labelText: 'Area inicial'),
+                    items: areas
+                        .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
+                        .toList(),
+                    onChanged: (v) => setState(() => _areaId = v),
+                  )
+                else
+                  const Text('Adiciona areas primeiro.', style: TextStyle(color: Colors.orange))
               else
-                const Text('Adiciona areas primeiro.', style: TextStyle(color: Colors.orange)),
+                const Text('Jogador nao precisa area inicial.',
+                    style: TextStyle(color: AppColors.textMuted)),
               const SizedBox(height: 24),
               ImagePickerField(
                 label: 'Retrato (portrait)',

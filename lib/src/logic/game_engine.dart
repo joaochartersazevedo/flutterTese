@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import '../data/dialogue_ai_service.dart';
 import '../data/renpy_asset_resolver.dart';
 import '../models/area.dart';
 import '../models/character.dart';
 import '../models/connection.dart';
 import '../models/dialogue.dart';
+import '../models/emotion.dart';
 import '../models/event.dart';
+import '../models/save_data.dart';
 import '../models/state_flag.dart';
 import '../models/task.dart';
 import '../models/world_blueprint.dart';
@@ -36,6 +39,17 @@ class GameEngine extends ChangeNotifier {
 
   Dialogue? _currentDialogue;
   int _currentLineIndex = 0;
+
+  /// Emotion mode: active when dialogue type is playerChat.
+  bool _emotionModeActive = false;
+
+  /// Conversation history for emotion branches (last 4 exchanges).
+  /// Each entry: (playerEmotion, playerText, npcResponse).
+  final List<(int emotionId, String playerLine, String npcResponse)>
+      _conversationHistory = [];
+
+  /// Rate limiter for AI calls: last call time in minutes.
+  late int _lastAiCallTime;
 
   // ---------- HELPERS ----------
 
@@ -107,15 +121,27 @@ class GameEngine extends ChangeNotifier {
   int get currentLineIndex => _currentLineIndex;
   int get totalLines => _currentDialogue?.lines.length ?? 0;
 
+  /// True when in playerChat dialogue mode (emotion wheel active).
+  bool get emotionModeActive =>
+      _emotionModeActive && _currentDialogue?.type == DialogueType.playerChat;
+
+  /// Last 4 exchanges for AI context. (emotionId, playerLine, npcResponse).
+  List<(int, String, String)> get conversationHistory =>
+      List.unmodifiable(_conversationHistory);
+
   bool isAreaSelected(Area area) => area.id == _currentAreaId;
 
   String speakerName(int speakerId) {
-    if (speakerId == 0) return 'Jogador';
+    if (speakerId == 0) {
+      return _char(0)?.name ?? 'Jogador';
+    }
     return _char(speakerId)?.name ?? 'NPC $speakerId';
   }
 
   String speakerColor(int speakerId) {
-    if (speakerId == 0) return '#009900';
+    if (speakerId == 0) {
+      return _char(0)?.colorHex ?? '#009900';
+    }
     return _char(speakerId)?.colorHex ?? '#ffffff';
   }
 
@@ -125,7 +151,7 @@ class GameEngine extends ChangeNotifier {
   /// Returns absolute path to speaker portrait for given emotion.
   /// Falls back to default portrait, then empty string.
   String speakerPortraitPath(int speakerId, int emotionId) {
-    final char = speakerId == 0 ? null : _char(speakerId);
+    final char = _char(speakerId);
     if (char == null || char.portraitPath.isEmpty) return '';
 
     // Derive emotion path: "editor/portraits/portrait (1).png"
@@ -194,8 +220,87 @@ class GameEngine extends ChangeNotifier {
     if (d == null) return;
     _currentDialogue = d;
     _currentLineIndex = 0;
+    _emotionModeActive = d.type == DialogueType.playerChat;
+    if (_emotionModeActive) {
+      _conversationHistory.clear();
+      _lastAiCallTime = _elapsedMinutes;
+    }
     _logLine('Dialogo: ${d.name}');
     notifyListeners();
+  }
+
+  /// Player selected emotion in wheelUI. Continues dialogue with emotion branch.
+  /// Triggers AI response generation if needed.
+  Future<void> selectEmotion(int emotionId) async {
+    if (!_emotionModeActive || _currentDialogue == null) return;
+    final branch = _currentDialogue!.playerEmotions[emotionId];
+    if (branch == null) return;
+
+    // Time advance: +30s for emotion choice
+    _elapsedMinutes += 1; // 30s~1m rounding
+    _minutesSincePopulate += 1;
+
+    // Add to history (keep last 4)
+    _conversationHistory.add((
+      emotionId,
+      branch.playerLine,
+      branch.npcResponse,
+    ));
+    if (_conversationHistory.length > 4) {
+      _conversationHistory.removeAt(0);
+    }
+
+    // Generate response if empty + rate check  
+    if (branch.npcResponse.isEmpty &&
+        (_elapsedMinutes - _lastAiCallTime) >= 5) {
+      try {
+        final npc = _char(_currentDialogue!.characterIds.firstWhere(
+          (id) => id != 0,
+          orElse: () => 1,
+        ));
+        final generated = await _generateEmotionResponse(
+          emotionId,
+          npc?.name ?? 'NPC',
+          _currentDialogue!.topic ?? 'life',
+        );
+        _conversationHistory[_conversationHistory.length - 1] = (
+          emotionId,
+          branch.playerLine,
+          generated,
+        );
+        _lastAiCallTime = _elapsedMinutes;
+      } catch (e) {
+        _logLine('Erro AI: ${e.toString().split('\n').first}');
+      }
+    }
+
+    _currentLineIndex++;
+    notifyListeners();
+  }
+
+  /// Generate NPC response based on emotion, character, topic + conversation history.
+  Future<String> _generateEmotionResponse(
+    int emotionId,
+    String npcName,
+    String topic,
+  ) async {
+    // Build prompt with conversation context
+    final lastExchanges = _conversationHistory
+        .map((e) => 'Jogador [${e.$1}]: ${e.$2}\n$npcName: ${e.$3}')
+        .join('\n\n');
+
+    final emotionName = getEmotion(emotionId).toString();
+    final prompt = '''
+Context: Conversation with $npcName about $topic.
+Player emotion: $emotionName
+
+Previous exchanges:
+$lastExchanges
+
+Respond naturally and briefly (1-2 sentences) as $npcName to the player's last emotional choice.
+''';
+
+    return DialogueAiService.instance.generateLine(prompt);
   }
 
   void advanceLine() {
@@ -254,6 +359,9 @@ class GameEngine extends ChangeNotifier {
     _minutesSincePopulate = 0;
     _currentDialogue = null;
     _currentLineIndex = 0;
+    _emotionModeActive = false;
+    _conversationHistory.clear();
+    _lastAiCallTime = 0;
 
     _log
       ..clear()
@@ -360,5 +468,59 @@ class GameEngine extends ChangeNotifier {
   void _logLine(String msg) {
     _log.add(msg);
     if (_log.length > 200) _log.removeRange(0, _log.length - 200);
+  }
+
+  // ---------- SAVE/RESTORE ----------
+
+  SaveData saveState(String saveName) {
+    // Capture game flags (StateFlag values)
+    final gameFlags = <int, bool>{};
+    for (final flag in _gamestates) {
+      gameFlags[flag.id] = flag.value;
+    }
+
+    // Capture character positions
+    final charPositions = <int, int>{};
+    for (final char in _characters) {
+      charPositions[char.id] = char.areaId;
+    }
+
+    return SaveData(
+      saveName: saveName,
+      timestamp: DateTime.now(),
+      currentAreaId: _currentAreaId,
+      elapsedMinutes: _elapsedMinutes,
+      minutesSincePopulate: _minutesSincePopulate,
+      log: List<String>.from(_log),
+      gameFlags: gameFlags,
+      characterPositions: charPositions,
+    );
+  }
+
+  void restoreState(SaveData save) {
+    _currentAreaId = save.currentAreaId;
+    _elapsedMinutes = save.elapsedMinutes;
+    _minutesSincePopulate = save.minutesSincePopulate;
+    _log.clear();
+    _log.addAll(save.log);
+
+    // Restore game flags
+    for (final e in save.gameFlags.entries) {
+      _setGameState(e.key, e.value);
+    }
+
+    // Restore character positions
+    for (final e in save.characterPositions.entries) {
+      final char = _char(e.key);
+      if (char != null) {
+        _replace(
+          _characters,
+          (c) => c.id == e.key,
+          char.copyWith(areaId: e.value),
+        );
+      }
+    }
+
+    _tick();
   }
 }

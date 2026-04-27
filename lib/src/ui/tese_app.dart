@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../data/save_file_service.dart';
 import '../data/seed_world.dart';
 import '../domain/blueprint_editor.dart';
 import '../logic/game_engine.dart';
+import '../models/save_data.dart';
 import 'app_theme.dart';
 import 'editor/editor_main.dart';
 import 'game/game_main.dart';
+import 'game/save_selection_screen.dart';
 
 class TeseDesktopApp extends StatelessWidget {
   const TeseDesktopApp({super.key});
@@ -31,7 +34,9 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late final BlueprintEditor _editor;
   GameEngine? _engine;
+  SaveData? _currentSave;
   bool _inGame = false;
+  bool _showingSaveSelection = true;
 
   @override
   void initState() {
@@ -46,6 +51,15 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
+  Future<void> _onSaveSelected(SaveData save) async {
+    if (mounted) {
+      setState(() {
+        _currentSave = save;
+        _showingSaveSelection = false;
+      });
+    }
+  }
+
   void _launchGame() {
     final bp = _editor.build();
     if (bp.areas.isEmpty) {
@@ -54,10 +68,18 @@ class _AppShellState extends State<AppShell> {
       );
       return;
     }
+    
     setState(() {
       _engine?.dispose();
       _engine = GameEngine(bp);
+      
+      // Restore save state if current save exists
+      if (_currentSave != null) {
+        _engine!.restoreState(_currentSave!);
+      }
+      
       _inGame = true;
+      _showingSaveSelection = false;
     });
   }
 
@@ -67,13 +89,39 @@ class _AppShellState extends State<AppShell> {
     _launchGame();
   }
 
-  void _returnToEditor() => setState(() => _inGame = false);
+  Future<void> _returnToEditor() async {
+    // Save current game state if in game
+    if (_currentSave != null && _engine != null) {
+      final updatedSave = _engine!.saveState(_currentSave!.saveName);
+      await SaveFileService.saveSave(updatedSave);
+    }
+
+    if (mounted) {
+      setState(() {
+        _inGame = false;
+        _showingSaveSelection = true;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (_inGame && _engine != null) {
-      return GameMain(engine: _engine!, onExit: _returnToEditor);
+    if (_showingSaveSelection) {
+      return Scaffold(
+        body: SaveSelectionScreen(
+          onSaveSelected: _onSaveSelected,
+        ),
+      );
     }
+
+    if (_inGame && _engine != null) {
+      return GameMain(
+        engine: _engine!,
+        currentSave: _currentSave,
+        onExit: _returnToEditor,
+      );
+    }
+
     return ListenableBuilder(
       listenable: _editor,
       builder: (context, _) => EditorMain(

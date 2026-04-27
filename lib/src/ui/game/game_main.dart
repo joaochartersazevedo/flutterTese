@@ -6,19 +6,34 @@ import '../../logic/game_engine.dart';
 import '../../models/area.dart';
 import '../../models/character.dart';
 import '../../models/connection.dart';
+import '../../models/dialogue.dart';
+import '../../models/emotion.dart';
+import '../../models/save_data.dart';
 import '../../models/task.dart';
 import '../app_theme.dart';
+import 'emotion_wheel.dart';
 
 class GameMain extends StatelessWidget {
-  const GameMain({super.key, required this.engine, required this.onExit});
+  const GameMain({
+    super.key,
+    required this.engine,
+    this.currentSave,
+    required this.onExit,
+  });
+
   final GameEngine engine;
-  final VoidCallback onExit;
+  final SaveData? currentSave;
+  final Future<void> Function() onExit;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: engine,
-      builder: (context, _) => _GameView(engine: engine, onExit: onExit),
+      builder: (context, _) => _GameView(
+        engine: engine,
+        currentSave: currentSave,
+        onExit: onExit,
+      ),
     );
   }
 }
@@ -26,9 +41,19 @@ class GameMain extends StatelessWidget {
 // ---------- Main view ----------
 
 class _GameView extends StatelessWidget {
-  const _GameView({required this.engine, required this.onExit});
+  const _GameView({
+    required this.engine,
+    this.currentSave,
+    required this.onExit,
+  });
+
   final GameEngine engine;
-  final VoidCallback onExit;
+  final SaveData? currentSave;
+  final Future<void> Function() onExit;
+
+  Future<void> _exitGame() async {
+    await onExit();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -108,7 +133,7 @@ class _GameView extends StatelessWidget {
             right: 8,
             child: IconButton(
               icon: const Icon(Icons.close, color: Colors.white70),
-              onPressed: onExit,
+              onPressed: _exitGame,
               tooltip: 'Sair',
             ),
           ),
@@ -384,6 +409,12 @@ class _DialogueBox extends StatelessWidget {
     final dialogue = engine.currentDialogue!;
     if (line == null) return const SizedBox.shrink();
 
+    // Show emotion wheel if playerChat type
+    if (dialogue.type == DialogueType.playerChat && engine.emotionModeActive) {
+      return _EmotionDialogueBox(engine: engine);
+    }
+
+    // Normal dialogue box for text/chat/localized
     final speakerName = engine.speakerName(line.speakerId);
     final portraitPath = engine.speakerPortraitPath(line.speakerId, line.emotionId);
     final portraitFile = portraitPath.isNotEmpty ? File(portraitPath) : null;
@@ -495,6 +526,192 @@ class _DialogueBox extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------- Emotion dialogue box (playerChat) ----------
+
+class _EmotionDialogueBox extends StatefulWidget {
+  const _EmotionDialogueBox({required this.engine});
+  final GameEngine engine;
+
+  @override
+  State<_EmotionDialogueBox> createState() => _EmotionDialogueBoxState();
+}
+
+class _EmotionDialogueBoxState extends State<_EmotionDialogueBox> {
+  int? _selectedEmotionId;
+
+  @override
+  Widget build(BuildContext context) {
+    final dialogue = widget.engine.currentDialogue!;
+    final npcId = dialogue.characterIds.firstWhere(
+      (id) => id != 0,
+      orElse: () => 1,
+    );
+    final playerId = dialogue.characterIds.firstWhere(
+      (id) => id != npcId,
+      orElse: () => 0,
+    );
+    
+    final npcName = widget.engine.speakerName(npcId);
+    final playerName = widget.engine.speakerName(playerId);
+
+    // Show exchange if emotion selected
+    if (_selectedEmotionId != null) {
+      final branch = dialogue.playerEmotions[_selectedEmotionId!];
+      if (branch != null) {
+        final emotion = getEmotion(_selectedEmotionId!);
+        
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.dialogueBg,
+            border: const Border(
+              top: BorderSide(color: AppColors.dialogueBorder, width: 1),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Player emotional choice
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '$playerName ($emotion): ',
+                      style: const TextStyle(
+                        color: Color(0xFF00FF00),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    TextSpan(
+                      text: branch.playerLine,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // NPC response
+              if (branch.npcResponse.isNotEmpty)
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '$npcName: ',
+                        style: TextStyle(
+                          color: Color(
+                            int.parse(
+                              widget.engine
+                                  .speakerColor(npcId)
+                                  .replaceAll('#', 'FF'),
+                              radix: 16,
+                            ),
+                          ),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      TextSpan(
+                        text: branch.npcResponse,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 16),
+
+              // Buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      setState(() => _selectedEmotionId = null);
+                    },
+                    child: const Text(
+                      'Outra emoção',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () {
+                      widget.engine.advanceLine();
+                      setState(() => _selectedEmotionId = null);
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                    ),
+                    child: const Text('Continuar', style: TextStyle(fontSize: 13)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }
+    }
+
+    // Show wheel
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.dialogueBg,
+        border:
+            const Border(top: BorderSide(color: AppColors.dialogueBorder, width: 1)),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header
+          Text(
+            '$playerName → $npcName: Escolhe emoção',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Emotion wheel
+          Center(
+            child: EmotionWheel(
+              size: 480,
+              selectedEmotionId: _selectedEmotionId,
+              onEmotionSelected: (emotionId) async {
+                setState(() => _selectedEmotionId = emotionId);
+                await widget.engine.selectEmotion(emotionId);
+              },
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Skip
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: widget.engine.skipDialogue,
+              child: const Text('Saltar',
+                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+            ),
+          ),
+        ],
       ),
     );
   }
