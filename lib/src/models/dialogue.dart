@@ -25,7 +25,7 @@ class Dialogue {
     this.topic,
   });
 
-  final int id;
+  final String id;
   final String name;
   final List<int> characterIds;
   final List<DialogueLine> lines;

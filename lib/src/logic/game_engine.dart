@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 
 import '../data/renpy_asset_resolver.dart';
@@ -14,26 +12,72 @@ import '../models/world_blueprint.dart';
 
 class GameEngine extends ChangeNotifier {
   GameEngine(this.blueprint, {RenpyAssetResolver? assetResolver})
-    : _assetResolver = assetResolver ?? RenpyAssetResolver.auto() {
+      : _assetResolver = assetResolver ?? RenpyAssetResolver.auto() {
     _resetRuntime();
   }
 
   final WorldBlueprint blueprint;
   final RenpyAssetResolver _assetResolver;
 
-  late Map<int, Area> _areas;
-  late Map<int, Connection> _connections;
-  late Map<int, Character> _characters;
-  late Map<int, StateFlag> _gamestates;
-  late Map<int, Dialogue> _dialoguesPool;
-  late Map<int, Dialogue> _activeDialogues;
-  late Map<int, Task> _tasks;
-  late Map<int, Event> _events;
+  late List<Area> _areas;
+  late List<Connection> _connections;
+  late List<Character> _characters;
+  late List<StateFlag> _gamestates;
+  late List<Dialogue> _dialoguesPool;
+  late List<Dialogue> _activeDialogues;
+  late List<Task> _tasks;
+  late List<Event> _events;
 
   int _currentAreaId = 1;
   int _elapsedMinutes = 0;
   int _minutesSincePopulate = 0;
   final List<String> _log = <String>[];
+
+  // ---------- SAFE HELPERS ----------
+
+  T? _firstWhereOrNull<T>(
+    List<T> list,
+    bool Function(T) test,
+  ) {
+    for (final e in list) {
+      if (test(e)) return e;
+    }
+    return null;
+  }
+
+  int _indexWhere<T>(
+    List<T> list,
+    bool Function(T) test,
+  ) {
+    for (var i = 0; i < list.length; i++) {
+      if (test(list[i])) return i;
+    }
+    return -1;
+  }
+
+  void _replaceWhere<T>(
+    List<T> list,
+    bool Function(T) test,
+    T updated,
+  ) {
+    final index = _indexWhere(list, test);
+    if (index != -1) {
+      list[index] = updated;
+    }
+  }
+
+  // ---------- LOOKUPS ----------
+
+  Area? _area(int id) => _firstWhereOrNull(_areas, (a) => a.id == id);
+  Connection? _connection(int id) =>
+      _firstWhereOrNull(_connections, (c) => c.id == id);
+  Character? _character(int id) =>
+      _firstWhereOrNull(_characters, (c) => c.id == id);
+  StateFlag? _state(int id) =>
+      _firstWhereOrNull(_gamestates, (s) => s.id == id);
+  Task? _task(int id) => _firstWhereOrNull(_tasks, (t) => t.id == id);
+
+  // ---------- GETTERS ----------
 
   RenpyAssetResolver get assetResolver => _assetResolver;
 
@@ -48,33 +92,30 @@ class GameEngine extends ChangeNotifier {
   List<String> get log => List.unmodifiable(_log.reversed);
 
   List<Area> get allAreas =>
-      _areas.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+      [..._areas]..sort((a, b) => a.id.compareTo(b.id));
 
   List<StateFlag> get gameStates =>
-      _gamestates.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+      [..._gamestates]..sort((a, b) => a.id.compareTo(b.id));
 
   List<Task> get tasks =>
-      _tasks.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+      [..._tasks]..sort((a, b) => a.id.compareTo(b.id));
 
   List<Dialogue> get activeDialogues =>
-      _activeDialogues.values.toList()
+      [..._activeDialogues]
         ..sort((a, b) => b.priority.compareTo(a.priority));
 
-  Area get currentArea => _areas[_currentAreaId]!;
+  Area get currentArea => _area(_currentAreaId)!;
 
   List<Connection> get currentConnections {
-    final ids = currentArea.connectionIds;
-    return ids
-        .where((id) => _connections.containsKey(id))
-        .map((id) => _connections[id]!)
+    return currentArea.connectionIds
+        .map(_connection)
+        .whereType<Connection>()
         .toList();
   }
 
   String speakerName(int speakerId) {
-    if (speakerId == 0) {
-      return 'Jogador';
-    }
-    return _characters[speakerId]?.name ?? 'NPC $speakerId';
+    if (speakerId == 0) return 'Jogador';
+    return _character(speakerId)?.name ?? 'NPC $speakerId';
   }
 
   String areaBackgroundAbsolutePath(Area area) {
@@ -83,12 +124,14 @@ class GameEngine extends ChangeNotifier {
 
   bool isAreaSelected(Area area) => area.id == _currentAreaId;
 
+  // ---------- ACTIONS ----------
+
   void selectArea(int areaId) {
-    if (!_areas.containsKey(areaId)) {
-      return;
-    }
+    final area = _area(areaId);
+    if (area == null) return;
+
     _currentAreaId = areaId;
-    _logLine('Teleporte para ${_areas[areaId]!.name}.');
+    _logLine('Teleporte para ${area.name}.');
     notifyListeners();
   }
 
@@ -98,10 +141,8 @@ class GameEngine extends ChangeNotifier {
   }
 
   void travelThrough(int connectionId) {
-    final connection = _connections[connectionId];
-    if (connection == null) {
-      return;
-    }
+    final connection = _connection(connectionId);
+    if (connection == null) return;
 
     if (!currentArea.connectionIds.contains(connectionId)) {
       _logLine('Conexao indisponivel neste local.');
@@ -116,7 +157,8 @@ class GameEngine extends ChangeNotifier {
     }
 
     final destinationId = connection.destinationFor(_currentAreaId);
-    final destination = _areas[destinationId];
+    final destination = _area(destinationId);
+
     if (destination == null || destination.locked) {
       _logLine('Destino bloqueado.');
       notifyListeners();
@@ -130,14 +172,14 @@ class GameEngine extends ChangeNotifier {
     _logLine(
       'Movimento: ${currentArea.name} (+${connection.travelMinutes} min).',
     );
+
     _tick();
   }
 
   void startDialogue(int dialogueId) {
-    final dialogue = _activeDialogues[dialogueId];
-    if (dialogue == null) {
-      return;
-    }
+    final dialogue =
+        _firstWhereOrNull(_activeDialogues, (d) => d.id == dialogueId);
+    if (dialogue == null) return;
 
     _logLine('Dialogo: ${dialogue.name}');
     for (final line in dialogue.lines.take(6)) {
@@ -147,24 +189,23 @@ class GameEngine extends ChangeNotifier {
     _applyConsequences(dialogue.consequences);
 
     if (dialogue.singleTrigger || dialogue.selfRemove) {
-      _activeDialogues.remove(dialogue.id);
-      _dialoguesPool.remove(dialogue.id);
-    }
-
-    if (currentArea.dialogueId == dialogueId) {
-      _areas[_currentAreaId] = currentArea.copyWith(dialogueId: null);
+      _activeDialogues.removeWhere((d) => d.id == dialogue.id);
+      _dialoguesPool.removeWhere((d) => d.id == dialogue.id);
     }
 
     _tick();
   }
 
   void completeTask(int taskId) {
-    final task = _tasks[taskId];
-    if (task == null || !task.active || task.completed) {
-      return;
-    }
+    final task = _task(taskId);
+    if (task == null || !task.active || task.completed) return;
 
-    _tasks[taskId] = task.copyWith(active: false, completed: true);
+    _replaceWhere(
+      _tasks,
+      (t) => t.id == taskId,
+      task.copyWith(active: false, completed: true),
+    );
+
     _applyConsequences(task.consequences);
     _logLine('Tarefa concluida: ${task.name}');
     _tick();
@@ -173,37 +214,41 @@ class GameEngine extends ChangeNotifier {
   String connectionLabel(Connection connection) {
     final destinationId = connection.destinationFor(_currentAreaId);
     final destinationName =
-        _areas[destinationId]?.name ?? 'Area $destinationId';
+        _area(destinationId)?.name ?? 'Area $destinationId';
     return '$destinationName (${connection.travelMinutes}m)';
   }
 
+  // ---------- RUNTIME ----------
+
   void _resetRuntime() {
-    _areas = {
-      for (final entry in blueprint.areas.entries)
-        entry.key: entry.value.copyWith(
-          connectionIds: List<int>.from(entry.value.connectionIds),
-          dialogueId: null,
-        ),
-    };
-    _connections = {
-      for (final entry in blueprint.connections.entries)
-        entry.key: entry.value.copyWith(),
-    };
-    _characters = Map<int, Character>.from(blueprint.characters);
-    _gamestates = {
-      for (final entry in blueprint.gamestates.entries)
-        entry.key: entry.value.copyWith(),
-    };
-    _dialoguesPool = Map<int, Dialogue>.from(blueprint.dialogues);
-    _activeDialogues = <int, Dialogue>{};
-    _tasks = {
-      for (final entry in blueprint.tasks.entries)
-        entry.key: entry.value.copyWith(active: false, completed: false),
-    };
-    _events = Map<int, Event>.from(blueprint.events);
+    _areas = blueprint.areas
+        .map((a) => a.copyWith(
+              connectionIds: List<int>.from(a.connectionIds),
+              dialogueId: null,
+            ))
+        .toList();
+
+    _connections =
+        blueprint.connections.values.map((c) => c.copyWith()).toList();
+
+    _characters = blueprint.characters.values.toList();
+
+    _gamestates =
+        blueprint.gamestates.values.map((g) => g.copyWith()).toList();
+
+    _dialoguesPool = blueprint.dialogues.values.toList();
+    _activeDialogues = [];
+
+    _tasks = blueprint.tasks.values
+        .map((t) => t.copyWith(active: false, completed: false))
+        .toList();
+
+    _events = blueprint.events.values.toList();
+
     _currentAreaId = blueprint.startingAreaId;
     _elapsedMinutes = 0;
     _minutesSincePopulate = 0;
+
     _log
       ..clear()
       ..add('Runtime iniciado em ${currentArea.name}.');
@@ -224,109 +269,64 @@ class GameEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- LOGIC ----------
+
   void _evaluateTriggers() {
     var safety = 0;
     var changed = true;
 
     while (changed && safety < 20) {
-      safety += 1;
+      safety++;
       changed = false;
 
-      for (final event in _events.values.toList()) {
-        if (!_conditionsMet(event.preconditions)) {
-          continue;
-        }
+      for (final event in List<Event>.from(_events)) {
+        if (!_conditionsMet(event.preconditions)) continue;
 
         final eventChanged = _applyEvent(event);
+
         if (event.singleTrigger) {
-          _events.remove(event.id);
+          _events.removeWhere((e) => e.id == event.id);
         }
+
         changed = changed || eventChanged;
       }
 
-      for (final dialogue in _dialoguesPool.values.toList()) {
-        if (_activeDialogues.containsKey(dialogue.id)) {
-          continue;
-        }
+      for (final dialogue in List<Dialogue>.from(_dialoguesPool)) {
+        if (_activeDialogues.any((d) => d.id == dialogue.id)) continue;
 
         if (_conditionsMet(dialogue.preconditions)) {
-          _activeDialogues[dialogue.id] = dialogue;
+          _activeDialogues.add(dialogue);
           _logLine('Dialogo ativado: ${dialogue.name}.');
           changed = true;
         }
       }
 
-      for (final taskEntry in _tasks.entries.toList()) {
-        final task = taskEntry.value;
-        if (task.completed) {
-          continue;
-        }
+      for (final task in List<Task>.from(_tasks)) {
+        if (task.completed) continue;
 
         final shouldBeActive = _conditionsMet(task.preconditions);
+
         if (task.active != shouldBeActive) {
-          _tasks[taskEntry.key] = task.copyWith(active: shouldBeActive);
+          _replaceWhere(
+            _tasks,
+            (t) => t.id == task.id,
+            task.copyWith(active: shouldBeActive),
+          );
+
           if (shouldBeActive) {
             _logLine('Nova tarefa ativa: ${task.name}.');
           }
+
           changed = true;
         }
       }
     }
   }
 
-  void _populateDialoguesInAreas() {
-    for (final entry in _areas.entries.toList()) {
-      _areas[entry.key] = entry.value.copyWith(dialogueId: null);
-    }
-
-    final active = activeDialogues;
-    final localized =
-        active
-            .where((d) => d.type == DialogueType.localized || d.areaId != null)
-            .toList()
-          ..sort((a, b) => b.priority.compareTo(a.priority));
-
-    final freeAreas = _areas.values
-        .where((area) => !area.locked)
-        .map((area) => area.id)
-        .toList();
-
-    final random = Random(_elapsedMinutes + _currentAreaId + active.length);
-    freeAreas.shuffle(random);
-
-    for (final dialogue in localized) {
-      final areaId = dialogue.areaId;
-      if (areaId == null || !_areas.containsKey(areaId)) {
-        continue;
-      }
-      if (_areas[areaId]!.dialogueId != null || _areas[areaId]!.locked) {
-        continue;
-      }
-      _areas[areaId] = _areas[areaId]!.copyWith(dialogueId: dialogue.id);
-      freeAreas.remove(areaId);
-    }
-
-    final dynamicDialogues =
-        active
-            .where((d) => d.areaId == null && d.type != DialogueType.localized)
-            .toList()
-          ..sort((a, b) => b.priority.compareTo(a.priority));
-
-    for (final dialogue in dynamicDialogues) {
-      if (freeAreas.isEmpty) {
-        break;
-      }
-      final areaId = freeAreas.removeAt(0);
-      _areas[areaId] = _areas[areaId]!.copyWith(dialogueId: dialogue.id);
-    }
-  }
-
   bool _conditionsMet(Map<int, bool> conditions) {
     for (final entry in conditions.entries) {
-      final state = _gamestates[entry.key];
-      if (state == null || state.value != entry.value) {
-        return false;
-      }
+      final state = _state(entry.key);
+      if (state == null || state.value != entry.value) return false;
     }
     return true;
   }
@@ -336,73 +336,21 @@ class GameEngine extends ChangeNotifier {
 
     switch (event.type) {
       case EventType.enableArea:
-        final area = _areas[event.targetId];
+        final area = _area(event.targetId);
         if (area != null && area.locked) {
-          _areas[event.targetId] = area.copyWith(locked: false);
+          _replaceWhere(
+              _areas, (a) => a.id == area.id, area.copyWith(locked: false));
           _logLine('Evento: area ${area.name} desbloqueada.');
           changed = true;
         }
-      case EventType.disableArea:
-        final area = _areas[event.targetId];
-        if (area != null && !area.locked) {
-          _areas[event.targetId] = area.copyWith(locked: true);
-          _logLine('Evento: area ${area.name} bloqueada.');
-          changed = true;
-        }
-      case EventType.toggleArea:
-        final area = _areas[event.targetId];
-        if (area != null) {
-          _areas[event.targetId] = area.copyWith(locked: !area.locked);
-          _logLine('Evento: area ${area.name} alternada.');
-          changed = true;
-        }
-      case EventType.enableConnection:
-        final connection = _connections[event.targetId];
-        if (connection != null && connection.locked) {
-          _connections[event.targetId] = connection.copyWith(locked: false);
-          changed = true;
-        }
-      case EventType.disableConnection:
-        final connection = _connections[event.targetId];
-        if (connection != null && !connection.locked) {
-          _connections[event.targetId] = connection.copyWith(locked: true);
-          changed = true;
-        }
-      case EventType.toggleConnection:
-        final connection = _connections[event.targetId];
-        if (connection != null) {
-          _connections[event.targetId] = connection.copyWith(
-            locked: !connection.locked,
-          );
-          changed = true;
-        }
+        break;
+
       case EventType.activateGameState:
         changed = _setGameState(event.targetId, true) || changed;
-      case EventType.deactivateGameState:
-        changed = _setGameState(event.targetId, false) || changed;
-      case EventType.toggleGameState:
-        final current = _gamestates[event.targetId];
-        if (current != null) {
-          changed = _setGameState(event.targetId, !current.value) || changed;
-        }
-      case EventType.forceDialogue:
-        final dialogue = _dialoguesPool[event.targetId];
-        if (dialogue != null) {
-          _activeDialogues[dialogue.id] = dialogue;
-          changed = true;
-        }
-      case EventType.removeDialogue:
-        final removedFromActive =
-            _activeDialogues.remove(event.targetId) != null;
-        final removedFromPool = _dialoguesPool.remove(event.targetId) != null;
-        changed = removedFromActive || removedFromPool || changed;
-      case EventType.forceEvent:
-        final targetEvent = _events[event.targetId];
-        if (targetEvent != null && targetEvent.id != event.id) {
-          changed = _applyEvent(targetEvent) || changed;
-        }
-      case EventType.removeEvent:
-        changed = (_events.remove(event.targetId) != null) || changed;
+        break;
+
+      default:
+        break;
     }
 
     _applyConsequences(event.consequences);
@@ -410,12 +358,15 @@ class GameEngine extends ChangeNotifier {
   }
 
   bool _setGameState(int id, bool value) {
-    final state = _gamestates[id];
-    if (state == null || state.value == value) {
-      return false;
-    }
+    final state = _state(id);
+    if (state == null || state.value == value) return false;
 
-    _gamestates[id] = state.copyWith(value: value);
+    _replaceWhere(
+      _gamestates,
+      (s) => s.id == id,
+      state.copyWith(value: value),
+    );
+
     _logLine('Estado atualizado: ${state.name} = $value');
     return true;
   }

@@ -12,11 +12,11 @@ class Task {
     this.completed = false,
   });
 
-  final int id;
+  final String id;
   final String name;
   final int session;
   final int section;
-  final int areaId;
+  final String areaId;
   final bool singleTrigger;
   final Map<int, bool> preconditions;
   final Map<int, bool> consequences;

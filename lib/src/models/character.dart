@@ -8,10 +8,10 @@ class Character {
     required this.bodyPath,
   });
 
-  final int id;
+  final String id;
   final String name;
   final String colorHex;
   final String portraitPath;
-  final int areaId;
+  final String areaId;
   final String bodyPath;
 }

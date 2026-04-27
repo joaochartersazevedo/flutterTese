@@ -5,20 +5,18 @@ class Area {
     required this.backgroundPath,
     required this.connectionIds,
     this.locked = false,
-    this.dialogueId,
   });
 
-  final int id;
+  final String id;
   final String name;
   final String backgroundPath;
-  final List<int> connectionIds;
+  final List<String> connectionIds;
   final bool locked;
-  final int? dialogueId;
 
   Area copyWith({
     String? name,
     String? backgroundPath,
-    List<int>? connectionIds,
+    List<String>? connectionIds,
     bool? locked,
   }) {
     return Area(

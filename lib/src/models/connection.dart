@@ -7,7 +7,7 @@ class Connection {
     this.locked = false,
   });
 
-  final int id;
+  final String id;
   final int areaA;
   final int areaB;
   final int travelMinutes;
