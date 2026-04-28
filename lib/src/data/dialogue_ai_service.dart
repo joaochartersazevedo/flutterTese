@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import '../models/character.dart';
+
 
 const _apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
 const _defaultModel = 'openrouter/free';
@@ -148,12 +150,22 @@ class DialogueAiService {
     required String speakerName,
     required String context,
     String previousLine = '',
+    Character? speaker,
+    List<Character> allChars = const [],
   }) async {
     final hist = previousLine.isNotEmpty
         ? '\nPrevious line: "$previousLine"'
         : '';
+    final personalityCtx = speaker != null ? _personalityContext(speaker) : '';
+    final relCtx = speaker != null ? _relationshipsContext(speaker, allChars) : '';
+    final personalityLine = personalityCtx.isNotEmpty
+        ? '\nPersonality: $personalityCtx'
+        : '';
+    final relLine = relCtx.isNotEmpty
+        ? '\nRelationships: $relCtx'
+        : '';
     final prompt =
-        'Visual novel character "$speakerName" is speaking.$hist\n'
+        'Visual novel character "$speakerName" is speaking.$hist$personalityLine$relLine\n'
         'Context: $context\n'
         'Write ONE short dialogue line (max 2 sentences) for $speakerName. '
         'Return only the line text, no quotes, no prefix.';
@@ -170,11 +182,17 @@ class DialogueAiService {
     required List<String> characterNames,
     required String topic,
     required int numLines,
+    List<Character> characters = const [],
   }) async {
     final chars = characterNames.join(', ');
+    final charContext = _buildCharacterContext(
+      characters.where((c) => characterNames.contains(c.name)).toList(),
+      characters,
+    );
+    final charContextLine = charContext.isNotEmpty ? '\n$charContext' : '';
     final prompt =
         'Write a $numLines-line visual novel dialogue between: $chars.\n'
-        'Topic: $topic.\n'
+        'Topic: $topic.$charContextLine\n'
         'Return ONLY a JSON array, no prose:\n'
         '[{"speaker":"Name","text":"line text"}, ...]\n'
         'Keep each line under 30 words.';
@@ -231,6 +249,51 @@ class DialogueAiService {
     }
     return result;
   }
+}
+
+// ─── Personality / relationship helpers ──────────────────────────────────────
+
+const _traitDescriptions = <String, List<String?>>{
+  'extroverted': ['very introverted', null, 'very extroverted'],
+  'friendly':    ['hostile/unfriendly', null, 'very friendly and agreeable'],
+  'responsible': ['irresponsible and careless', null, 'very responsible and conscientious'],
+  'anxious':     ['very calm and emotionally stable', null, 'very anxious and neurotic'],
+  'creative':    ['conventional and closed-minded', null, 'very creative and open to experience'],
+};
+
+String _personalityContext(Character c) {
+  if (c.personality.isEmpty) return '';
+  final parts = <String>[];
+  for (final entry in c.personality.entries) {
+    if (entry.value == 1) continue;
+    final desc = _traitDescriptions[entry.key]?[entry.value];
+    if (desc != null) parts.add(desc);
+  }
+  return parts.join(', ');
+}
+
+String _relationshipsContext(Character speaker, List<Character> allChars) {
+  if (speaker.relationships.isEmpty) return '';
+  final parts = <String>[];
+  for (final entry in speaker.relationships.entries) {
+    final other = allChars.where((c) => c.id == entry.key).firstOrNull;
+    final name = other?.name ?? 'character#${entry.key}';
+    parts.add('$name: ${entry.value}');
+  }
+  return parts.join('; ');
+}
+
+String _buildCharacterContext(List<Character> subjects, List<Character> allChars) {
+  final lines = <String>[];
+  for (final c in subjects) {
+    final p = _personalityContext(c);
+    final r = _relationshipsContext(c, allChars);
+    if (p.isEmpty && r.isEmpty) continue;
+    final parts = [if (p.isNotEmpty) 'personality: $p', if (r.isNotEmpty) 'relationships: $r'];
+    lines.add('${c.name} — ${parts.join('; ')}');
+  }
+  if (lines.isEmpty) return '';
+  return 'Character context:\n${lines.join('\n')}';
 }
 
 /// Emotion names for AI prompts (index = emotionId, matches emotionWheel in emotion.dart).

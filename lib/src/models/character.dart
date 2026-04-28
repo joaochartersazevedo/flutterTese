@@ -6,6 +6,8 @@ class Character {
     required this.portraitPath,
     required this.areaId,
     required this.bodyPath,
+    this.personality = const <String, int>{},
+    this.relationships = const <int, String>{},
   });
 
   final int id;
@@ -14,6 +16,11 @@ class Character {
   final String portraitPath;
   final int areaId;
   final String bodyPath;
+  /// Big Five traits → 0 (low), 1 (neutral), 2 (high).
+  /// Keys: extroverted, friendly, responsible, anxious, creative
+  final Map<String, int> personality;
+  /// charId → plain-English relationship description (e.g. "best friend", "rival")
+  final Map<int, String> relationships;
 
   Character copyWith({
     String? name,
@@ -21,6 +28,8 @@ class Character {
     String? portraitPath,
     int? areaId,
     String? bodyPath,
+    Map<String, int>? personality,
+    Map<int, String>? relationships,
   }) {
     return Character(
       id: id,
@@ -29,6 +38,8 @@ class Character {
       portraitPath: portraitPath ?? this.portraitPath,
       areaId: areaId ?? this.areaId,
       bodyPath: bodyPath ?? this.bodyPath,
+      personality: personality ?? this.personality,
+      relationships: relationships ?? this.relationships,
     );
   }
 }

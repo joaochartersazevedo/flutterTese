@@ -95,6 +95,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
         characterNames: charNames,
         topic: params.topic,
         numLines: params.numLines,
+        characters: allChars,
       );
       final nameToId = {
         for (final c in selectedChars) c.name.toLowerCase(): c.id,
@@ -1046,14 +1047,16 @@ class _NodeCardState extends State<_NodeCard> {
 
     setState(() => _suggestingLine = true);
     try {
-      final speakerName = _speaker().name;
+      final speaker = _speaker();
       final history = widget.previousLines.isNotEmpty
           ? widget.previousLines.join('\n')
           : _textCtrl.text;
       final suggested = await DialogueAiService.instance.suggestLine(
-        speakerName: speakerName,
+        speakerName: speaker.name,
         context: userCtx.isEmpty ? 'conversa geral' : userCtx,
         previousLine: history,
+        speaker: speaker,
+        allChars: widget.chars,
       );
       if (mounted) {
         setState(() {
