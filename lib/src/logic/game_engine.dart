@@ -224,16 +224,18 @@ class GameEngine extends ChangeNotifier {
   /// Player selected emotion at current choice node. Advances past it.
   void selectEmotion(int emotionId) {
     if (!emotionModeActive || _currentNode == null) return;
-    final choice = _currentNode!.choice!;
+    final choiceNode = _currentNode!;
+    final choice = choiceNode.choice!;
 
     _elapsedMinutes += 1;
     _minutesSincePopulate += 1;
     _conversationHistory.add((emotionId, choice.choices[emotionId] ?? ''));
     if (_conversationHistory.length > 4) _conversationHistory.removeAt(0);
 
-    _currentNode = _currentNode!.children?[emotionId] ?? _currentNode!.nextNode;
+    _currentNode = choiceNode.children?[emotionId] ?? choiceNode.nextNode;
     _stepCount++;
     if (_currentNode == null) {
+      _applyConsequences(choiceNode.branchConsequences);
       _closeDialogue();
     } else {
       notifyListeners();
@@ -246,6 +248,7 @@ class GameEngine extends ChangeNotifier {
     _currentNode = node.nextNode;
     _stepCount++;
     if (_currentNode == null) {
+      _applyConsequences(node.branchConsequences);
       _closeDialogue();
     } else {
       notifyListeners();

@@ -24,12 +24,19 @@ class DialogueChoice {
 /// A single node in a playerChat dialogue sequence.
 /// Exactly one of [line] or [choice] is non-null.
 class DialogueNode {
-  DialogueNode({this.line, this.choice});
+  DialogueNode({
+    this.line,
+    this.choice,
+    Map<int, bool>? branchConsequences,
+  }) : branchConsequences = branchConsequences ?? {};
 
   DialogueLine? line;
   DialogueChoice? choice;
   DialogueNode? nextNode;
   Map<int, DialogueNode>? children;
+
+  /// Flags applied when dialogue exits through this node (leaf-only, try-set semantics).
+  Map<int, bool> branchConsequences;
 
   bool get isChoice => choice != null;
   bool get isLine => line != null;

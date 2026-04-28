@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/dialogue_ai_service.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/character.dart';
 import '../../models/dialogue.dart';
@@ -58,6 +59,104 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
   // ── tree ──────────────────────────────────────────────────────────────────
   late DialogueNode _root;
 
+  bool _generating = false;
+  String _genStatus = '';
+
+  Future<void> _generateFullDialogue() async {
+    if (!DialogueAiService.instance.hasApiKey) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configura a chave AI primeiro')),
+      );
+      return;
+    }
+    final allChars = _chars;
+    final params = await showDialog<_GenFullParams>(
+      context: context,
+      builder: (_) => _GenerateFullDialogueDialog(
+        chars: allChars,
+        preselectedCharIds: _selectedCharIds,
+      ),
+    );
+    if (params == null || !mounted) return;
+
+    final selectedChars = params.selectedCharIds.isEmpty
+        ? allChars
+        : allChars.where((c) => params.selectedCharIds.contains(c.id)).toList();
+
+    setState(() {
+      _generating = true;
+      _genStatus = 'A gerar…';
+    });
+    try {
+      final charNames = selectedChars.isEmpty
+          ? ['NPC']
+          : selectedChars.map((c) => c.name).toList();
+      final lines = await DialogueAiService.instance.generateDialogueTree(
+        characterNames: charNames,
+        topic: params.topic,
+        numLines: params.numLines,
+      );
+      final nameToId = {
+        for (final c in selectedChars) c.name.toLowerCase(): c.id,
+      };
+      final npcNodes = lines.map((l) {
+        final id =
+            nameToId[l.speaker.toLowerCase()] ??
+            (selectedChars.isNotEmpty ? selectedChars.first.id : 0);
+        return DialogueNode(
+          line: DialogueLine(speakerId: id, text: l.text),
+        );
+      }).toList();
+
+      // If emotions selected: fetch player lines and interleave choice nodes.
+      final List<DialogueNode> allNodes;
+      if (params.selectedEmotionIds.isNotEmpty && npcNodes.isNotEmpty) {
+        setState(() => _genStatus = 'A gerar emoções…');
+        final npcName = selectedChars.isNotEmpty
+            ? selectedChars.first.name
+            : 'NPC';
+        final emotionChoices = await DialogueAiService.instance
+            .generatePlayerLines(
+              emotionIds: params.selectedEmotionIds,
+              topic: params.topic,
+              npcName: npcName,
+            );
+        allNodes = [];
+        for (var i = 0; i < npcNodes.length; i++) {
+          allNodes.add(npcNodes[i]);
+          // Insert choice node after every NPC line except the last.
+          if (i < npcNodes.length - 1) {
+            allNodes.add(
+              DialogueNode(
+                choice: DialogueChoice(choices: Map.from(emotionChoices)),
+              ),
+            );
+          }
+        }
+      } else {
+        allNodes = npcNodes;
+      }
+
+      for (var i = 0; i < allNodes.length - 1; i++) {
+        allNodes[i].nextNode = allNodes[i + 1];
+      }
+      setState(() {
+        _root = allNodes.isNotEmpty
+            ? allNodes.first
+            : DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
+        _genStatus = 'Gerado: ${lines.length} linhas.';
+        _generating = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _genStatus = 'Erro: $e';
+          _generating = false;
+        });
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -69,7 +168,8 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     _priority = ex?.priority ?? 0;
     _preconditions = ex != null ? Map.of(ex.preconditions) : {};
     _consequences = ex != null ? Map.of(ex.consequences) : {};
-    _root = ex?.parentNode ??
+    _root =
+        ex?.parentNode ??
         DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
   }
 
@@ -79,16 +179,19 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     super.dispose();
   }
 
-  List<Character> get _chars => widget.editor.characters.values.toList()
-    ..sort((a, b) => a.id.compareTo(b.id));
+  List<Character> get _chars =>
+      widget.editor.characters.values.toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
 
-  List<StateFlag> get _flags => widget.editor.gamestates.values.toList()
-    ..sort((a, b) => a.id.compareTo(b.id));
+  List<StateFlag> get _flags =>
+      widget.editor.gamestates.values.toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
 
   void _submit() {
     if (_nameCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Nome obrigatório')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Nome obrigatório')));
       return;
     }
     final id = widget.existing?.id ?? widget.editor.nextDialogueId();
@@ -113,17 +216,60 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
-        title:
-            Text(widget.existing == null ? 'Novo Diálogo' : 'Editar Diálogo'),
+        title: Text(
+          widget.existing == null ? 'Novo Diálogo' : 'Editar Diálogo',
+        ),
         actions: [
+          if (_genStatus.isNotEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  _genStatus,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ),
+          _AiKeyButton(),
+          const SizedBox(width: 4),
+          _generating
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : Tooltip(
+                  message: 'Gerar diálogo com AI',
+                  child: OutlinedButton.icon(
+                    onPressed: _generateFullDialogue,
+                    icon: const Icon(Icons.auto_awesome, size: 14),
+                    label: const Text('Gerar', style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.accent,
+                      side: BorderSide(
+                        color: AppColors.accent.withValues(alpha: 0.6),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                    ),
+                  ),
+                ),
+          const SizedBox(width: 8),
           FilledButton.icon(
             onPressed: _submit,
             icon: const Icon(Icons.check, size: 16),
             label: const Text('Guardar'),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.teal,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             ),
           ),
           const SizedBox(width: 16),
@@ -150,8 +296,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                 priority: _priority,
                 preconditions: _preconditions,
                 consequences: _consequences,
-                onChanged: (charIds, st, sr, prio, pre, cons) =>
-                    setState(() {
+                onChanged: (charIds, st, sr, prio, pre, cons) => setState(() {
                   _selectedCharIds = charIds;
                   _singleTrigger = st;
                   _selfRemove = sr;
@@ -171,7 +316,9 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 10),
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
                   color: AppColors.surface,
                   child: Text(
                     'Árvore de diálogo',
@@ -189,6 +336,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                       child: _TreeView(
                         root: _root,
                         chars: _chars,
+                        flags: _flags,
                         onChanged: _refresh,
                       ),
                     ),
@@ -237,7 +385,8 @@ class _MetaPanel extends StatefulWidget {
     int,
     Map<int, bool>,
     Map<int, bool>,
-  ) onChanged;
+  )
+  onChanged;
 
   @override
   State<_MetaPanel> createState() => _MetaPanelState();
@@ -260,8 +409,7 @@ class _MetaPanelState extends State<_MetaPanel> {
     _cons = Map.of(widget.consequences);
   }
 
-  void _notify() =>
-      widget.onChanged(_charIds, _st, _sr, _prio, _pre, _cons);
+  void _notify() => widget.onChanged(_charIds, _st, _sr, _prio, _pre, _cons);
 
   @override
   Widget build(BuildContext context) {
@@ -277,8 +425,10 @@ class _MetaPanelState extends State<_MetaPanel> {
 
         _sectionLabel('Personagens'),
         if (widget.chars.isEmpty)
-          const Text('Sem personagens',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 12))
+          const Text(
+            'Sem personagens',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+          )
         else
           Wrap(
             spacing: 6,
@@ -286,8 +436,7 @@ class _MetaPanelState extends State<_MetaPanel> {
             children: widget.chars.map((c) {
               final sel = _charIds.contains(c.id);
               return FilterChip(
-                label:
-                    Text(c.name, style: const TextStyle(fontSize: 12)),
+                label: Text(c.name, style: const TextStyle(fontSize: 12)),
                 selected: sel,
                 onSelected: (v) {
                   setState(() {
@@ -308,8 +457,7 @@ class _MetaPanelState extends State<_MetaPanel> {
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('Disparo único',
-              style: TextStyle(fontSize: 13)),
+          title: const Text('Disparo único', style: TextStyle(fontSize: 13)),
           value: _st,
           onChanged: (v) {
             setState(() => _st = v);
@@ -319,8 +467,10 @@ class _MetaPanelState extends State<_MetaPanel> {
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('Remover após disparar',
-              style: TextStyle(fontSize: 13)),
+          title: const Text(
+            'Remover após disparar',
+            style: TextStyle(fontSize: 13),
+          ),
           value: _sr,
           onChanged: (v) {
             setState(() => _sr = v);
@@ -347,8 +497,7 @@ class _MetaPanelState extends State<_MetaPanel> {
             ),
             SizedBox(
               width: 28,
-              child: Text('$_prio',
-                  style: const TextStyle(fontSize: 13)),
+              child: Text('$_prio', style: const TextStyle(fontSize: 13)),
             ),
           ],
         ),
@@ -356,53 +505,57 @@ class _MetaPanelState extends State<_MetaPanel> {
         if (widget.flags.isNotEmpty) ...[
           const SizedBox(height: 16),
           _sectionLabel('Pré-condições'),
-          ...widget.flags.map((f) => _FlagRow(
-                name: f.name,
-                value: _pre[f.id],
-                onChanged: (v) {
-                  setState(() {
-                    if (v == null) {
-                      _pre.remove(f.id);
-                    } else {
-                      _pre[f.id] = v;
-                    }
-                  });
-                  _notify();
-                },
-              )),
+          ...widget.flags.map(
+            (f) => _FlagRow(
+              name: f.name,
+              value: _pre[f.id],
+              onChanged: (v) {
+                setState(() {
+                  if (v == null) {
+                    _pre.remove(f.id);
+                  } else {
+                    _pre[f.id] = v;
+                  }
+                });
+                _notify();
+              },
+            ),
+          ),
           const SizedBox(height: 16),
           _sectionLabel('Consequências'),
-          ...widget.flags.map((f) => _FlagRow(
-                name: f.name,
-                value: _cons[f.id],
-                onChanged: (v) {
-                  setState(() {
-                    if (v == null) {
-                      _cons.remove(f.id);
-                    } else {
-                      _cons[f.id] = v;
-                    }
-                  });
-                  _notify();
-                },
-              )),
+          ...widget.flags.map(
+            (f) => _FlagRow(
+              name: f.name,
+              value: _cons[f.id],
+              onChanged: (v) {
+                setState(() {
+                  if (v == null) {
+                    _cons.remove(f.id);
+                  } else {
+                    _cons[f.id] = v;
+                  }
+                });
+                _notify();
+              },
+            ),
+          ),
         ],
       ],
     );
   }
 
   Widget _sectionLabel(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(
-          text.toUpperCase(),
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.9,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        color: AppColors.textSecondary,
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.9,
+      ),
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -426,16 +579,18 @@ class _FlagRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Expanded(
-              child:
-                  Text(name, style: const TextStyle(fontSize: 12))),
+          Expanded(child: Text(name, style: const TextStyle(fontSize: 12))),
           ToggleButtons(
             isSelected: [value == true, value == null, value == false],
-            onPressed: (i) =>
-                onChanged(i == 0 ? true : i == 2 ? false : null),
+            onPressed: (i) => onChanged(
+              i == 0
+                  ? true
+                  : i == 2
+                  ? false
+                  : null,
+            ),
             borderRadius: BorderRadius.circular(6),
-            constraints:
-                const BoxConstraints(minHeight: 28, minWidth: 36),
+            constraints: const BoxConstraints(minHeight: 28, minWidth: 36),
             children: const [
               Icon(Icons.check, size: 13, color: Colors.green),
               Icon(Icons.remove, size: 13),
@@ -456,16 +611,20 @@ class _TreeView extends StatefulWidget {
   const _TreeView({
     required this.root,
     required this.chars,
+    required this.flags,
     required this.onChanged,
     this.onRemoveSelf,
     this.emotionId,
+    this.previousLines = const <String>[],
   });
 
   final DialogueNode root;
   final List<Character> chars;
+  final List<StateFlag> flags;
   final VoidCallback onChanged;
   final VoidCallback? onRemoveSelf;
   final int? emotionId;
+  final List<String> previousLines;
 
   @override
   State<_TreeView> createState() => _TreeViewState();
@@ -516,12 +675,11 @@ class _TreeViewState extends State<_TreeView> {
   Widget build(BuildContext context) {
     final sortedEntries =
         widget.root.isChoice && (widget.root.children ?? {}).isNotEmpty
-            ? (widget.root.children!.entries.toList()
-              ..sort((a, b) => a.key.compareTo(b.key)))
-            : <MapEntry<int, DialogueNode>>[];
+        ? (widget.root.children!.entries.toList()
+            ..sort((a, b) => a.key.compareTo(b.key)))
+        : <MapEntry<int, DialogueNode>>[];
 
-    _branchKeys.removeWhere(
-        (k, _) => !sortedEntries.any((e) => e.key == k));
+    _branchKeys.removeWhere((k, _) => !sortedEntries.any((e) => e.key == k));
     for (final entry in sortedEntries) {
       _branchKeys.putIfAbsent(entry.key, () => GlobalKey());
     }
@@ -536,6 +694,8 @@ class _TreeViewState extends State<_TreeView> {
           _NodeCard(
             node: widget.root,
             chars: widget.chars,
+            flags: widget.flags,
+            previousLines: widget.previousLines,
             onChanged: widget.onChanged,
             onRemoveSelf: widget.onRemoveSelf,
           ),
@@ -562,7 +722,9 @@ class _TreeViewState extends State<_TreeView> {
                                 emotionId: sortedEntries[i].key,
                                 branchRoot: sortedEntries[i].value,
                                 chars: widget.chars,
+                                flags: widget.flags,
                                 parentChoiceNode: widget.root,
+                                previousLines: widget.previousLines,
                                 onChanged: widget.onChanged,
                               ),
                             ),
@@ -593,6 +755,11 @@ class _TreeViewState extends State<_TreeView> {
             _TreeView(
               root: widget.root.nextNode!,
               chars: widget.chars,
+              flags: widget.flags,
+              previousLines: [
+                ...widget.previousLines,
+                if (widget.root.line != null) widget.root.line!.text,
+              ],
               onChanged: widget.onChanged,
               onRemoveSelf: () {
                 widget.root.nextNode = widget.root.nextNode!.nextNode;
@@ -604,7 +771,8 @@ class _TreeViewState extends State<_TreeView> {
             _AddNodeButtons(
               onAddLine: () {
                 widget.root.nextNode = DialogueNode(
-                    line: DialogueLine(speakerId: 0, text: ''));
+                  line: DialogueLine(speakerId: 0, text: ''),
+                );
                 widget.onChanged();
               },
               onAddChoice: () {
@@ -628,15 +796,19 @@ class _BranchColumn extends StatelessWidget {
     required this.emotionId,
     required this.branchRoot,
     required this.chars,
+    required this.flags,
     required this.parentChoiceNode,
     required this.onChanged,
+    this.previousLines = const <String>[],
   });
 
   final int emotionId;
   final DialogueNode branchRoot;
   final List<Character> chars;
+  final List<StateFlag> flags;
   final DialogueNode parentChoiceNode;
   final VoidCallback onChanged;
+  final List<String> previousLines;
 
   @override
   Widget build(BuildContext context) {
@@ -653,13 +825,11 @@ class _BranchColumn extends StatelessWidget {
         children: [
           // Emotion label chip
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(4),
-              border:
-                  Border.all(color: color.withValues(alpha: 0.4)),
+              border: Border.all(color: color.withValues(alpha: 0.4)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -668,7 +838,9 @@ class _BranchColumn extends StatelessWidget {
                   width: 7,
                   height: 7,
                   decoration: BoxDecoration(
-                      color: color, shape: BoxShape.circle),
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 5),
                 Text(
@@ -685,9 +857,11 @@ class _BranchColumn extends StatelessWidget {
                     parentChoiceNode.children?.remove(emotionId);
                     onChanged();
                   },
-                  child: Icon(Icons.close,
-                      size: 12,
-                      color: color.withValues(alpha: 0.7)),
+                  child: Icon(
+                    Icons.close,
+                    size: 12,
+                    color: color.withValues(alpha: 0.7),
+                  ),
                 ),
               ],
             ),
@@ -696,6 +870,8 @@ class _BranchColumn extends StatelessWidget {
           _TreeView(
             root: branchRoot,
             chars: chars,
+            flags: flags,
+            previousLines: previousLines,
             onChanged: onChanged,
             onRemoveSelf: () {
               parentChoiceNode.children?.remove(emotionId);
@@ -721,8 +897,9 @@ class _AddBranchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final existing = node.children?.keys.toSet() ?? {};
-    final available =
-        emotionWheel.where((e) => !existing.contains(e.id)).toList();
+    final available = emotionWheel
+        .where((e) => !existing.contains(e.id))
+        .toList();
     if (available.isEmpty) return const SizedBox.shrink();
 
     return Wrap(
@@ -734,20 +911,18 @@ class _AddBranchBar extends StatelessWidget {
           avatar: Container(
             width: 8,
             height: 8,
-            decoration:
-                BoxDecoration(color: color, shape: BoxShape.circle),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          label:
-              Text('+ ${e.label}', style: const TextStyle(fontSize: 11)),
+          label: Text('+ ${e.label}', style: const TextStyle(fontSize: 11)),
           onPressed: () {
             node.children ??= {};
             node.children![e.id] = DialogueNode(
-                line: DialogueLine(speakerId: 0, text: ''));
+              line: DialogueLine(speakerId: 0, text: ''),
+            );
             onChanged();
           },
           backgroundColor: color.withValues(alpha: 0.07),
-          side:
-              BorderSide(color: color.withValues(alpha: 0.35)),
+          side: BorderSide(color: color.withValues(alpha: 0.35)),
           padding: const EdgeInsets.symmetric(horizontal: 4),
           visualDensity: VisualDensity.compact,
         );
@@ -764,14 +939,18 @@ class _NodeCard extends StatefulWidget {
   const _NodeCard({
     required this.node,
     required this.chars,
+    required this.flags,
     required this.onChanged,
     this.onRemoveSelf,
+    this.previousLines = const <String>[],
   });
 
   final DialogueNode node;
   final List<Character> chars;
+  final List<StateFlag> flags;
   final VoidCallback onChanged;
   final VoidCallback? onRemoveSelf;
+  final List<String> previousLines;
 
   @override
   State<_NodeCard> createState() => _NodeCardState();
@@ -779,6 +958,7 @@ class _NodeCard extends StatefulWidget {
 
 class _NodeCardState extends State<_NodeCard> {
   late final TextEditingController _textCtrl;
+  bool _suggestingLine = false;
 
   @override
   void initState() {
@@ -828,6 +1008,72 @@ class _NodeCardState extends State<_NodeCard> {
     widget.onChanged();
   }
 
+  Future<void> _suggestLine() async {
+    if (!DialogueAiService.instance.hasApiKey) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configura a chave AI primeiro')),
+      );
+      return;
+    }
+    final ctxCtrl = TextEditingController(text: _textCtrl.text);
+    final userCtx = await showDialog<String>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Sugerir linha com AI'),
+        content: TextField(
+          controller: ctxCtrl,
+          autofocus: true,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            labelText: 'Contexto / pista',
+            hintText: 'ex: fala sobre o exame de amanhã',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dlgCtx, ctxCtrl.text.trim()),
+            child: const Text('Gerar'),
+          ),
+        ],
+      ),
+    );
+    ctxCtrl.dispose();
+    if (userCtx == null || !mounted) return;
+
+    setState(() => _suggestingLine = true);
+    try {
+      final speakerName = _speaker().name;
+      final history = widget.previousLines.isNotEmpty
+          ? widget.previousLines.join('\n')
+          : _textCtrl.text;
+      final suggested = await DialogueAiService.instance.suggestLine(
+        speakerName: speakerName,
+        context: userCtx.isEmpty ? 'conversa geral' : userCtx,
+        previousLine: history,
+      );
+      if (mounted) {
+        setState(() {
+          _textCtrl.text = suggested;
+          widget.node.line ??= DialogueLine(speakerId: 0, text: '');
+          widget.node.line!.text = suggested;
+          _suggestingLine = false;
+        });
+        widget.onChanged();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _suggestingLine = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erro AI: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isLine = widget.node.isLine;
@@ -852,22 +1098,18 @@ class _NodeCardState extends State<_NodeCard> {
           children: [
             // Header
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
                 color: AppColors.surfaceHighlight,
                 borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(10)),
-                border: Border(
-                    left:
-                        BorderSide(color: accentColor, width: 3)),
+                  top: Radius.circular(10),
+                ),
+                border: Border(left: BorderSide(color: accentColor, width: 3)),
               ),
               child: Row(
                 children: [
                   Icon(
-                    isLine
-                        ? Icons.chat_bubble_outline
-                        : Icons.alt_route,
+                    isLine ? Icons.chat_bubble_outline : Icons.alt_route,
                     size: 13,
                     color: accentColor,
                   ),
@@ -891,9 +1133,11 @@ class _NodeCardState extends State<_NodeCard> {
                       borderRadius: BorderRadius.circular(4),
                       child: const Padding(
                         padding: EdgeInsets.all(4),
-                        child: Icon(Icons.swap_horiz,
-                            size: 14,
-                            color: AppColors.textMuted),
+                        child: Icon(
+                          Icons.swap_horiz,
+                          size: 14,
+                          color: AppColors.textMuted,
+                        ),
                       ),
                     ),
                   ),
@@ -906,8 +1150,11 @@ class _NodeCardState extends State<_NodeCard> {
                         borderRadius: BorderRadius.circular(4),
                         child: const Padding(
                           padding: EdgeInsets.all(4),
-                          child: Icon(Icons.delete_outline,
-                              size: 14, color: AppColors.error),
+                          child: Icon(
+                            Icons.delete_outline,
+                            size: 14,
+                            color: AppColors.error,
+                          ),
                         ),
                       ),
                     ),
@@ -921,6 +1168,16 @@ class _NodeCardState extends State<_NodeCard> {
               padding: const EdgeInsets.all(10),
               child: isLine ? _lineBody() : _choiceBody(),
             ),
+
+            // Branch consequences — only on leaf line nodes
+            if (isLine &&
+                widget.node.nextNode == null &&
+                widget.flags.isNotEmpty)
+              _BranchFlagsSection(
+                node: widget.node,
+                flags: widget.flags,
+                onChanged: widget.onChanged,
+              ),
           ],
         ),
       ),
@@ -930,12 +1187,11 @@ class _NodeCardState extends State<_NodeCard> {
   Widget _lineBody() {
     final validChars = widget.chars;
     final speakerId = widget.node.line?.speakerId ?? 0;
-    final resolvedId =
-        validChars.any((c) => c.id == speakerId)
-            ? speakerId
-            : validChars.isNotEmpty
-                ? validChars.first.id
-                : 0;
+    final resolvedId = validChars.any((c) => c.id == speakerId)
+        ? speakerId
+        : validChars.isNotEmpty
+        ? validChars.first.id
+        : 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -945,40 +1201,86 @@ class _NodeCardState extends State<_NodeCard> {
             value: resolvedId,
             decoration: const InputDecoration(
               labelText: 'Personagem',
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
             items: validChars
-                .map((c) => DropdownMenuItem(
+                .map(
+                  (c) => DropdownMenuItem(
                     value: c.id,
-                    child: Text(c.name,
-                        style: const TextStyle(fontSize: 13))))
+                    child: Text(c.name, style: const TextStyle(fontSize: 13)),
+                  ),
+                )
                 .toList(),
             onChanged: (v) {
               setState(() {
-                widget.node.line ??=
-                    DialogueLine(speakerId: 0, text: '');
+                widget.node.line ??= DialogueLine(speakerId: 0, text: '');
                 widget.node.line!.speakerId = v ?? 0;
               });
               widget.onChanged();
             },
           ),
         const SizedBox(height: 8),
-        TextField(
-          controller: _textCtrl,
-          maxLines: 2,
-          style: const TextStyle(fontSize: 13),
-          decoration: const InputDecoration(
-            hintText: 'Texto do diálogo…',
-            contentPadding:
-                EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _textCtrl,
+                  maxLines: 2,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: const InputDecoration(
+                    hintText: 'Texto do diálogo…',
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                  ),
+                  onChanged: (v) {
+                    widget.node.line ??= DialogueLine(speakerId: 0, text: '');
+                    widget.node.line!.text = v;
+                    widget.onChanged();
+                  },
+                ),
+              ),
+              const SizedBox(width: 4),
+              Tooltip(
+                message: 'Sugerir com AI',
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  child: InkWell(
+                    onTap: _suggestingLine ? null : _suggestLine,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      width: 32,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.accent.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Center(
+                        child: _suggestingLine
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.auto_awesome,
+                                size: 14,
+                                color: AppColors.accent,
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          onChanged: (v) {
-            widget.node.line ??=
-                DialogueLine(speakerId: 0, text: '');
-            widget.node.line!.text = v;
-            widget.onChanged();
-          },
         ),
       ],
     );
@@ -996,16 +1298,20 @@ class _NodeCardState extends State<_NodeCard> {
       spacing: 6,
       runSpacing: 4,
       children: active
-          .map((id) => Chip(
-                label: Text(_emotionName(id),
-                    style: const TextStyle(fontSize: 11)),
-                avatar: CircleAvatar(
-                    backgroundColor: _emotionColor(id),
-                    radius: 5),
-                padding: EdgeInsets.zero,
-                materialTapTargetSize:
-                    MaterialTapTargetSize.shrinkWrap,
-              ))
+          .map(
+            (id) => Chip(
+              label: Text(
+                _emotionName(id),
+                style: const TextStyle(fontSize: 11),
+              ),
+              avatar: CircleAvatar(
+                backgroundColor: _emotionColor(id),
+                radius: 5,
+              ),
+              padding: EdgeInsets.zero,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          )
           .toList(),
     );
   }
@@ -1046,10 +1352,11 @@ class _VLinePainter extends CustomPainter {
       ..lineTo(cx + 5, size.height - 7)
       ..close();
     canvas.drawPath(
-        path,
-        Paint()
-          ..color = AppColors.border
-          ..style = PaintingStyle.fill);
+      path,
+      Paint()
+        ..color = AppColors.border
+        ..style = PaintingStyle.fill,
+    );
   }
 
   @override
@@ -1076,9 +1383,10 @@ class _ForkPainter extends CustomPainter {
 
     if (branchCenters.length == 1) {
       canvas.drawLine(
-          Offset(branchCenters.first, midY),
-          Offset(branchCenters.first, size.height),
-          paint);
+        Offset(branchCenters.first, midY),
+        Offset(branchCenters.first, size.height),
+        paint,
+      );
       return;
     }
 
@@ -1107,10 +1415,7 @@ class _ForkPainter extends CustomPainter {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _AddNodeButtons extends StatelessWidget {
-  const _AddNodeButtons({
-    required this.onAddLine,
-    required this.onAddChoice,
-  });
+  const _AddNodeButtons({required this.onAddLine, required this.onAddChoice});
 
   final VoidCallback onAddLine;
   final VoidCallback onAddChoice;
@@ -1122,31 +1427,488 @@ class _AddNodeButtons extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _btn(Icons.chat_bubble_outline, 'Fala', AppColors.primary,
-              onAddLine),
+          _btn(Icons.chat_bubble_outline, 'Fala', AppColors.primary, onAddLine),
           const SizedBox(width: 8),
-          _btn(Icons.alt_route, 'Escolha', AppColors.accent,
-              onAddChoice),
+          _btn(Icons.alt_route, 'Escolha', AppColors.accent, onAddChoice),
         ],
       ),
     );
   }
 
-  Widget _btn(IconData icon, String label, Color color,
-      VoidCallback onPressed) {
+  Widget _btn(
+    IconData icon,
+    String label,
+    Color color,
+    VoidCallback onPressed,
+  ) {
     return OutlinedButton.icon(
       onPressed: onPressed,
       icon: Icon(icon, size: 13),
-      label:
-          Text(label, style: const TextStyle(fontSize: 12)),
+      label: Text(label, style: const TextStyle(fontSize: 12)),
       style: OutlinedButton.styleFrom(
         foregroundColor: color,
         side: BorderSide(color: color.withValues(alpha: 0.5)),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BRANCH FLAGS SECTION  (shown on leaf line nodes inside _NodeCard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BranchFlagsSection extends StatefulWidget {
+  const _BranchFlagsSection({
+    required this.node,
+    required this.flags,
+    required this.onChanged,
+  });
+
+  final DialogueNode node;
+  final List<StateFlag> flags;
+  final VoidCallback onChanged;
+
+  @override
+  State<_BranchFlagsSection> createState() => _BranchFlagsSectionState();
+}
+
+class _BranchFlagsSectionState extends State<_BranchFlagsSection> {
+  @override
+  Widget build(BuildContext context) {
+    final cons = widget.node.branchConsequences;
+    final unused = widget.flags.where((f) => !cons.containsKey(f.id)).toList();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: AppColors.teal.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.teal.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.flag_outlined, size: 12, color: AppColors.teal),
+              const SizedBox(width: 4),
+              const Text(
+                'FLAGS DO RAMO',
+                style: TextStyle(
+                  color: AppColors.teal,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9,
+                ),
+              ),
+              const Spacer(),
+              if (unused.isNotEmpty)
+                PopupMenuButton<int>(
+                  tooltip: 'Adicionar flag',
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.add, size: 14, color: AppColors.teal),
+                  onSelected: (id) {
+                    setState(() => widget.node.branchConsequences[id] = true);
+                    widget.onChanged();
+                  },
+                  itemBuilder: (_) => unused
+                      .map(
+                        (f) => PopupMenuItem(
+                          value: f.id,
+                          child: Text(
+                            f.name,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+            ],
+          ),
+          if (cons.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'Sem flags neste ramo.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
+            )
+          else
+            ...cons.entries.map((entry) {
+              final flag = widget.flags.firstWhere(
+                (f) => f.id == entry.key,
+                orElse: () => StateFlag(
+                  id: entry.key,
+                  name: 'Flag ${entry.key}',
+                  value: false,
+                ),
+              );
+              return Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        flag.name,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    ToggleButtons(
+                      isSelected: [!entry.value, entry.value],
+                      onPressed: (i) {
+                        setState(
+                          () => widget.node.branchConsequences[entry.key] =
+                              i == 1,
+                        );
+                        widget.onChanged();
+                      },
+                      constraints: const BoxConstraints(
+                        minHeight: 24,
+                        minWidth: 36,
+                      ),
+                      children: const [
+                        Text('OFF', style: TextStyle(fontSize: 9)),
+                        Text('ON', style: TextStyle(fontSize: 9)),
+                      ],
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setState(
+                          () =>
+                              widget.node.branchConsequences.remove(entry.key),
+                        );
+                        widget.onChanged();
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.close,
+                          size: 12,
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI KEY BUTTON
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AiKeyButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final hasKey = DialogueAiService.instance.hasApiKey;
+    return Tooltip(
+      message: hasKey ? 'AI configurada' : 'Configurar chave AI (OpenRouter)',
+      child: IconButton(
+        icon: Icon(
+          hasKey ? Icons.key : Icons.key_off_outlined,
+          size: 18,
+          color: hasKey ? AppColors.teal : AppColors.textMuted,
+        ),
+        onPressed: () => _showKeyDialog(context),
+      ),
+    );
+  }
+
+  void _showKeyDialog(BuildContext context) {
+    final ctrl = TextEditingController(text: DialogueAiService.instance.apiKey);
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Chave API OpenRouter'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Obtém uma chave em openrouter.ai/keys',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'OPENROUTER_API_KEY',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              DialogueAiService.instance.setApiKey(ctrl.text.trim());
+              Navigator.pop(context);
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GENERATE FULL DIALOGUE DIALOG + PARAMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GenFullParams {
+  const _GenFullParams({
+    required this.topic,
+    required this.numLines,
+    required this.selectedCharIds,
+    required this.selectedEmotionIds,
+  });
+  final String topic;
+  final int numLines;
+  final List<int> selectedCharIds;
+  final List<int> selectedEmotionIds;
+}
+
+class _GenerateFullDialogueDialog extends StatefulWidget {
+  const _GenerateFullDialogueDialog({
+    required this.chars,
+    required this.preselectedCharIds,
+  });
+  final List<Character> chars;
+  final List<int> preselectedCharIds;
+
+  @override
+  State<_GenerateFullDialogueDialog> createState() =>
+      _GenerateFullDialogueDialogState();
+}
+
+class _GenerateFullDialogueDialogState
+    extends State<_GenerateFullDialogueDialog> {
+  final _topicCtrl = TextEditingController();
+  int _numLines = 4;
+  late Set<int> _selCharIds;
+  late Set<int> _selEmotionIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selCharIds = widget.preselectedCharIds.isNotEmpty
+        ? Set.of(widget.preselectedCharIds)
+        : widget.chars.map((c) => c.id).toSet();
+    _selEmotionIds = emotionWheel.map((e) => e.id).toSet();
+  }
+
+  @override
+  void dispose() {
+    _topicCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Gerar Diálogo com AI'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── char selection ────────────────────────────────────────────
+              const Text(
+                'Personagens',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              if (widget.chars.isEmpty)
+                const Text(
+                  'Sem personagens no diálogo',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                    fontStyle: FontStyle.italic,
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: widget.chars.map((c) {
+                    final sel = _selCharIds.contains(c.id);
+                    return FilterChip(
+                      label: Text(c.name, style: const TextStyle(fontSize: 12)),
+                      selected: sel,
+                      onSelected: (v) => setState(() {
+                        if (v) {
+                          _selCharIds.add(c.id);
+                        } else {
+                          _selCharIds.remove(c.id);
+                        }
+                      }),
+                    );
+                  }).toList(),
+                ),
+              const SizedBox(height: 16),
+              // ── topic ─────────────────────────────────────────────────────
+              TextField(
+                controller: _topicCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Tópico da conversa',
+                  hintText: 'ex: próximo exame, amizade, segredo',
+                ),
+              ),
+              const SizedBox(height: 16),
+              // ── num lines ─────────────────────────────────────────────────
+              Row(
+                children: [
+                  const Text('Linhas NPC:', style: TextStyle(fontSize: 13)),
+                  Expanded(
+                    child: Slider(
+                      value: _numLines.toDouble(),
+                      min: 1,
+                      max: 10,
+                      divisions: 9,
+                      label: '$_numLines',
+                      onChanged: (v) => setState(() => _numLines = v.round()),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 24,
+                    child: Text(
+                      '$_numLines',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // ── emotion selection ─────────────────────────────────────────
+              const Text(
+                'Emoções do jogador (deixar vazio = sem escolha)',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 8),
+              _EmotionSelectionGrid(
+                selected: _selEmotionIds,
+                onToggle: (id) => setState(() {
+                  if (_selEmotionIds.contains(id)) {
+                    _selEmotionIds.remove(id);
+                  } else {
+                    _selEmotionIds.add(id);
+                  }
+                }),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(
+            context,
+            _GenFullParams(
+              topic: _topicCtrl.text.trim().isEmpty
+                  ? 'conversa'
+                  : _topicCtrl.text.trim(),
+              numLines: _numLines,
+              selectedCharIds: _selCharIds.toList(),
+              selectedEmotionIds: _selEmotionIds.toList(),
+            ),
+          ),
+          icon: const Icon(Icons.auto_awesome, size: 14),
+          label: const Text('Gerar'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMOTION SELECTION GRID (3×3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EmotionSelectionGrid extends StatelessWidget {
+  const _EmotionSelectionGrid({required this.selected, required this.onToggle});
+  final Set<int> selected;
+  final void Function(int id) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    const cols = 3;
+    final rows = (emotionWheel.length / cols).ceil();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(rows, (row) {
+        return Row(
+          children: List.generate(cols, (col) {
+            final idx = row * cols + col;
+            if (idx >= emotionWheel.length)
+              return const Expanded(child: SizedBox());
+            final e = emotionWheel[idx];
+            final sel = selected.contains(e.id);
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => onToggle(e.id),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: sel
+                          ? _emotionColor(e.id).withOpacity(0.25)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: sel
+                            ? _emotionColor(e.id)
+                            : AppColors.textMuted.withOpacity(0.3),
+                        width: sel ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      e.label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: sel ? _emotionColor(e.id) : AppColors.textMuted,
+                        fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      }),
     );
   }
 }
