@@ -1,159 +1,106 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../models/emotion.dart';
 
-const double _wheelDotRadius = 18.0;
-const double _wheelRingPadding = 36.0;
+// Grid col/row for each emotion id (0-7). Center cell (col=1, row=1) is empty.
+const _gridCols = [0, 1, 2, 0, 2, 0, 1, 2];
+const _gridRows = [0, 0, 0, 1, 1, 2, 2, 2];
 
-/// Emotion wheel laid out on circle for quick selection.
-class EmotionWheel extends StatefulWidget {
+/// 3×3 emotion grid (center empty) for player emotion selection.
+class EmotionWheel extends StatelessWidget {
   const EmotionWheel({
     super.key,
     required this.onEmotionSelected,
     this.selectedEmotionId,
-    this.size = 480,
+    this.activeIds,
+    this.size = 300,
   });
 
   final Function(int emotionId) onEmotionSelected;
   final int? selectedEmotionId;
+
+  /// If non-null, only these emotion IDs are selectable; others appear dimmed.
+  final Set<int>? activeIds;
+
   final double size;
 
   @override
-  State<EmotionWheel> createState() => _EmotionWheelState();
-}
-
-class _EmotionWheelState extends State<EmotionWheel> {
-  int? _hoveredId;
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (details) => _handleTap(details.localPosition),
-      child: CustomPaint(
-        painter: _CircumplexPainter(
-          hoveredId: _hoveredId,
-          selectedId: widget.selectedEmotionId,
-        ),
-        size: Size(widget.size, widget.size),
+    final cellSize = size / 3;
+    final gap = size * 0.02;
+    final innerCell = cellSize - gap * 2;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          for (int i = 0; i < emotionWheel.length; i++)
+            _buildCell(emotionWheel[i], cellSize, gap, innerCell),
+        ],
       ),
     );
   }
 
-  void _handleTap(Offset pos) {
-    final center = Offset(widget.size / 2, widget.size / 2);
-    final radius = (widget.size / 2) - _wheelDotRadius - _wheelRingPadding;
-    final selected = _closestEmotionAt(pos, center, radius);
-    if (selected != null) {
-      widget.onEmotionSelected(selected);
-    }
-  }
-
-  int? _closestEmotionAt(Offset pos, Offset center, double radius) {
-    int? closestId;
-    var minDist = double.infinity;
-    final count = emotionWheel.length;
-    for (var i = 0; i < count; i++) {
-      final angle = (2 * math.pi * i / count) - (math.pi / 2);
-      final x = center.dx + math.cos(angle) * radius;
-      final y = center.dy + math.sin(angle) * radius;
-      final dist = (pos - Offset(x, y)).distance;
-      if (dist < minDist) {
-        minDist = dist;
-        closestId = emotionWheel[i].id;
-      }
-    }
-    if (minDist <= (_wheelDotRadius + 10)) return closestId;
-    return null;
-  }
-}
-
-class _CircumplexPainter extends CustomPainter {
-  _CircumplexPainter({this.hoveredId, this.selectedId});
-  final int? hoveredId;
-  final int? selectedId;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width / 2) - _wheelRingPadding;
-
-    _drawRing(canvas, center, radius);
-    _drawEmotionButtons(canvas, center, radius);
-  }
-
-  void _drawRing(Canvas canvas, Offset center, double radius) {
-    final ringPaint = Paint()
-      ..color = Colors.white24
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawCircle(center, radius, ringPaint);
-  }
-
-  void _drawEmotionButtons(Canvas canvas, Offset center, double radius) {
-    final count = emotionWheel.length;
-    for (var i = 0; i < count; i++) {
-      final emotion = emotionWheel[i];
-      final angle = (2 * math.pi * i / count) - (math.pi / 2);
-      final x = center.dx + math.cos(angle) * radius;
-      final y = center.dy + math.sin(angle) * radius;
-
-      var color = Color(int.parse(emotion.color.replaceAll('#', 'FF'), radix: 16));
-      if (hoveredId == emotion.id) {
-        color = Color.lerp(color, Colors.white, 0.3)!;
-      }
-
-      // Circle
-      canvas.drawCircle(Offset(x, y), _wheelDotRadius, Paint()..color = color);
-
-      if (selectedId == emotion.id) {
-        canvas.drawCircle(
-          Offset(x, y),
-          _wheelDotRadius + 4,
-          Paint()
-            ..color = Colors.white
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.5,
-        );
-      }
-
-      // Label text inside circle
-      _drawText(
-        canvas,
-        emotion.label,
-        Offset(x, y - 4),
-        const TextStyle(
-          color: Colors.white,
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-        ),
-        align: true,
-      );
-    }
-  }
-
-  void _drawText(
-    Canvas canvas,
-    String text,
-    Offset offset,
-    TextStyle style, {
-    bool align = false,
-  }) {
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
+  Widget _buildCell(
+    CircumplexEmotion emotion,
+    double cellSize,
+    double gap,
+    double innerCell,
+  ) {
+    final col = _gridCols[emotion.id];
+    final row = _gridRows[emotion.id];
+    final color = Color(
+      int.parse('FF${emotion.color.replaceAll('#', '')}', radix: 16),
     );
-    tp.layout();
-    
-    final finalOffset = align
-        ? Offset(offset.dx - tp.width / 2, offset.dy - tp.height / 2)
-        : offset;
-    
-    tp.paint(canvas, finalOffset);
-  }
+    final isSelected = selectedEmotionId == emotion.id;
+    final isActive = activeIds == null || activeIds!.contains(emotion.id);
 
-  @override
-  bool shouldRepaint(_CircumplexPainter oldDelegate) =>
-      oldDelegate.hoveredId != hoveredId;
+    return Positioned(
+      left: col * cellSize + gap,
+      top: row * cellSize + gap,
+      width: innerCell,
+      height: innerCell,
+      child: GestureDetector(
+        onTap: isActive ? () => onEmotionSelected(emotion.id) : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            color: isActive
+                ? (isSelected ? color : color.withValues(alpha: 0.65))
+                : color.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isActive
+                  ? (isSelected ? Colors.white : color.withValues(alpha: 0.9))
+                  : color.withValues(alpha: 0.3),
+              width: isSelected ? 2.5 : 1.5,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.5),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: Text(
+              emotion.label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: isActive ? Colors.white : Colors.white38,
+                fontSize: innerCell * 0.14,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                shadows: isActive
+                    ? const [Shadow(color: Colors.black45, blurRadius: 4)]
+                    : null,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

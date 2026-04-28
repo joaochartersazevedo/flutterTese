@@ -78,56 +78,106 @@ WorldBlueprint buildSeedWorld() {
   };
 
   final dialogues = <int, Dialogue>{
-    1: const Dialogue(
+    1: Dialogue(
       id: 1,
       name: 'Ice Cream',
-      type: DialogueType.chat,
       characterIds: [1, 2],
-      lines: [
-        DialogueLine(speakerId: 1, emotionId: 1, text: 'Sou o Afonso.'),
-        DialogueLine(speakerId: 2, emotionId: 3, text: 'Sou a Bruna.'),
-      ],
+      parentNode: _chain([
+        DialogueNode(
+          line: DialogueLine(
+            speakerId: 1,
+            portraitId: 1,
+            text: 'Sou o Afonso.',
+          ),
+        ),
+        DialogueNode(
+          line: DialogueLine(speakerId: 2, portraitId: 3, text: 'Sou a Bruna.'),
+        ),
+      ]),
       singleTrigger: true,
       preconditions: {},
       consequences: {1: true},
       priority: 3,
     ),
-    2: const Dialogue(
+    2: Dialogue(
       id: 2,
       name: 'Football',
-      type: DialogueType.chat,
       characterIds: [2, 3],
-      lines: [
-        DialogueLine(speakerId: 2, emotionId: 2, text: 'Acho que ouvi a porta do patio a fechar.'),
-        DialogueLine(speakerId: 3, emotionId: 4, text: 'Vamos verificar no intervalo.'),
-      ],
+      parentNode: _chain([
+        DialogueNode(
+          line: DialogueLine(
+            speakerId: 2,
+            portraitId: 2,
+            text: 'Acho que ouvi a porta do patio a fechar.',
+          ),
+        ),
+        DialogueNode(
+          line: DialogueLine(
+            speakerId: 3,
+            portraitId: 4,
+            text: 'Vamos verificar no intervalo.',
+          ),
+        ),
+      ]),
       singleTrigger: true,
       preconditions: {},
       consequences: {2: true},
       priority: 2,
     ),
-    3: const Dialogue(
+    3: Dialogue(
       id: 3,
       name: 'Videogames',
-      type: DialogueType.chat,
       characterIds: [1, 3],
-      lines: [
-        DialogueLine(speakerId: 1, emotionId: 5, text: 'Este dialogo so aparece depois da primeira conversa.'),
-        DialogueLine(speakerId: 3, emotionId: 6, text: 'Sabes quando vai ser o torneio?'),
-      ],
+      parentNode: _chain([
+        DialogueNode(
+          line: DialogueLine(
+            speakerId: 1,
+            portraitId: 1,
+            text: 'Este dialogo so aparece depois da primeira conversa.',
+          ),
+        ),
+        DialogueNode(
+          line: DialogueLine(
+            speakerId: 3,
+            portraitId: 4,
+            text: 'Sabes quando vai ser o torneio?',
+          ),
+        ),
+      ]),
       singleTrigger: true,
       preconditions: {1: true},
       consequences: {3: true},
       priority: 1,
     ),
-    4: const Dialogue(
+    4: Dialogue(
       id: 4,
       name: 'Conversa com Afonso',
-      type: DialogueType.playerChat,
       characterIds: [1],
-      lines: [
-        DialogueLine(speakerId: 1, emotionId: 1, text: 'Estudas hoje para o exame?'),
-      ],
+      parentNode: _chain([
+        DialogueNode(
+          line: DialogueLine(
+            speakerId: 1,
+            portraitId: 1,
+            text: 'Estudas hoje para o exame?',
+          ),
+        ),
+        DialogueNode(
+          choice: DialogueChoice(
+            choices: {
+              0: 'Não me apetece nada estudar.',
+              2: 'Claro! Estou ansioso para estudar.',
+              6: 'Sim, vou estudar mais tarde.',
+            },
+          ),
+        ),
+        DialogueNode(
+          line: DialogueLine(
+            speakerId: 1,
+            portraitId: 1,
+            text: 'Boa sorte no exame!',
+          ),
+        ),
+      ]),
       singleTrigger: false,
       preconditions: {},
       consequences: {},
@@ -173,4 +223,12 @@ WorldBlueprint buildSeedWorld() {
     tasks: tasks,
     events: events,
   );
+}
+
+DialogueNode _chain(List<DialogueNode> nodes) {
+  assert(nodes.isNotEmpty);
+  for (int i = 0; i < nodes.length - 1; i++) {
+    nodes[i].nextNode = nodes[i + 1];
+  }
+  return nodes.first;
 }

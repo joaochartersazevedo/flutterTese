@@ -6,7 +6,6 @@ import '../../logic/game_engine.dart';
 import '../../models/area.dart';
 import '../../models/character.dart';
 import '../../models/connection.dart';
-import '../../models/dialogue.dart';
 import '../../models/emotion.dart';
 import '../../models/save_data.dart';
 import '../../models/task.dart';
@@ -29,11 +28,8 @@ class GameMain extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: engine,
-      builder: (context, _) => _GameView(
-        engine: engine,
-        currentSave: currentSave,
-        onExit: onExit,
-      ),
+      builder: (context, _) =>
+          _GameView(engine: engine, currentSave: currentSave, onExit: onExit),
     );
   }
 }
@@ -86,16 +82,16 @@ class _GameView extends StatelessWidget {
             ),
           ),
 
-          // Character sprites — always visible, dimmed when not speaking
-          if (chars.isNotEmpty)
+          // Character sprites — only visible when not in dialogue
+          if (chars.isNotEmpty && !inDialogue)
             Positioned(
-              bottom: inDialogue ? 200 : 100,
+              bottom: 100,
               left: 0,
               right: 0,
               child: _CharacterSprites(
                 engine: engine,
                 chars: chars,
-                activeSpeakerId: inDialogue ? (currentLine?.speakerId) : null,
+                activeSpeakerId: null,
               ),
             ),
 
@@ -156,11 +152,19 @@ class _GameView extends StatelessWidget {
             ),
 
           // Dialogue trigger buttons (right side, when not in dialogue)
-          if (!inDialogue)
-            _AreaDialogueButtons(engine: engine),
+          if (!inDialogue) _AreaDialogueButtons(engine: engine),
 
-          // Dialogue box (bottom overlay)
-          if (inDialogue && currentLine != null)
+          // Emotion wheel overlay (playerChat, after prologue exhausted)
+          if (inDialogue && engine.emotionModeActive)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _EmotionDialogueBox(engine: engine),
+            ),
+
+          // Dialogue box (regular lines + branch lines)
+          if (inDialogue && currentLine != null && !engine.emotionModeActive)
             Positioned(
               bottom: 0,
               left: 0,
@@ -190,8 +194,10 @@ class _GradientBg extends StatelessWidget {
         ),
       ),
       child: Center(
-        child: Text(area.name,
-            style: const TextStyle(color: Colors.white12, fontSize: 64)),
+        child: Text(
+          area.name,
+          style: const TextStyle(color: Colors.white12, fontSize: 64),
+        ),
       ),
     );
   }
@@ -253,7 +259,9 @@ class _CharPlaceholder extends StatelessWidget {
         border: Border.all(color: col.withValues(alpha: 0.6)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Center(child: Text(name, style: TextStyle(color: col, fontSize: 12))),
+      child: Center(
+        child: Text(name, style: TextStyle(color: col, fontSize: 12)),
+      ),
     );
   }
 }
@@ -329,7 +337,10 @@ class _AreaDialogueButtons extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary.withValues(alpha: 0.85),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
               ),
             ),
           );
@@ -364,33 +375,46 @@ class _TasksPanel extends StatelessWidget {
             children: [
               Icon(Icons.task_alt, size: 13, color: AppColors.accent),
               SizedBox(width: 6),
-              Text('Tarefas',
-                  style: TextStyle(
-                      color: AppColors.accent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5)),
+              Text(
+                'Tarefas',
+                style: TextStyle(
+                  color: AppColors.accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
-          ...tasks.map((t) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Icon(Icons.radio_button_unchecked,
-                          size: 10, color: Colors.white54),
+          ...tasks.map(
+            (t) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.radio_button_unchecked,
+                      size: 10,
+                      color: Colors.white54,
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(t.name,
-                          style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      t.name,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
                     ),
-                  ],
-                ),
-              )),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -406,17 +430,14 @@ class _DialogueBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final line = engine.currentLine;
-    final dialogue = engine.currentDialogue!;
     if (line == null) return const SizedBox.shrink();
+    final dialogue = engine.currentDialogue!;
 
-    // Show emotion wheel if playerChat type
-    if (dialogue.type == DialogueType.playerChat && engine.emotionModeActive) {
-      return _EmotionDialogueBox(engine: engine);
-    }
-
-    // Normal dialogue box for text/chat/localized
     final speakerName = engine.speakerName(line.speakerId);
-    final portraitPath = engine.speakerPortraitPath(line.speakerId, line.emotionId);
+    final portraitPath = engine.speakerPortraitPath(
+      line.speakerId,
+      line.portraitId,
+    );
     final portraitFile = portraitPath.isNotEmpty ? File(portraitPath) : null;
 
     Color speakerColor;
@@ -433,7 +454,8 @@ class _DialogueBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.dialogueBg,
           border: const Border(
-              top: BorderSide(color: AppColors.dialogueBorder, width: 1)),
+            top: BorderSide(color: AppColors.dialogueBorder, width: 1),
+          ),
         ),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
         child: Row(
@@ -465,7 +487,10 @@ class _DialogueBox extends StatelessWidget {
                   Text(
                     line.text,
                     style: const TextStyle(
-                        color: Colors.white, fontSize: 16, height: 1.55),
+                      color: Colors.white,
+                      fontSize: 16,
+                      height: 1.55,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   Row(
@@ -491,7 +516,10 @@ class _DialogueBox extends StatelessWidget {
                       const Spacer(),
                       Text(
                         dialogue.name,
-                        style: const TextStyle(color: Colors.white24, fontSize: 10),
+                        style: const TextStyle(
+                          color: Colors.white24,
+                          fontSize: 10,
+                        ),
                       ),
                       const SizedBox(width: 16),
                       TextButton(
@@ -501,8 +529,10 @@ class _DialogueBox extends StatelessWidget {
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        child: const Text('Saltar',
-                            style: TextStyle(color: Colors.white38, fontSize: 12)),
+                        child: const Text(
+                          'Saltar',
+                          style: TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
                       ),
                       const SizedBox(width: 8),
                       FilledButton(
@@ -510,7 +540,9 @@ class _DialogueBox extends StatelessWidget {
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 10),
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
                         ),
                         child: Text(
                           engine.currentLineIndex + 1 >= engine.totalLines
@@ -546,140 +578,100 @@ class _EmotionDialogueBoxState extends State<_EmotionDialogueBox> {
 
   @override
   Widget build(BuildContext context) {
+    final choiceNode = widget.engine.currentChoiceNode;
+    if (choiceNode == null) return const SizedBox.shrink();
+
     final dialogue = widget.engine.currentDialogue!;
-    final npcId = dialogue.characterIds.firstWhere(
-      (id) => id != 0,
-      orElse: () => 1,
-    );
     final playerId = dialogue.characterIds.firstWhere(
-      (id) => id != npcId,
+      (id) => id == 0,
       orElse: () => 0,
     );
-    
-    final npcName = widget.engine.speakerName(npcId);
     final playerName = widget.engine.speakerName(playerId);
+    final activeIds = choiceNode.choices.keys
+        .where((id) => choiceNode.hasChoice(id))
+        .toSet();
 
-    // Show exchange if emotion selected
-    if (_selectedEmotionId != null) {
-      final branch = dialogue.playerEmotions[_selectedEmotionId!];
-      if (branch != null) {
-        final emotion = getEmotion(_selectedEmotionId!);
-        
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.dialogueBg,
-            border: const Border(
-              top: BorderSide(color: AppColors.dialogueBorder, width: 1),
-            ),
+    // Show confirmation after player tapped an emotion
+    if (_selectedEmotionId != null && activeIds.contains(_selectedEmotionId!)) {
+      final emotion = getEmotion(_selectedEmotionId!);
+      final playerLine = choiceNode.choices[_selectedEmotionId!] ?? '';
+
+      return Container(
+        decoration: BoxDecoration(
+          color: AppColors.dialogueBg,
+          border: const Border(
+            top: BorderSide(color: AppColors.dialogueBorder, width: 1),
           ),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Player emotional choice
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '$playerName ($emotion): ',
-                      style: const TextStyle(
-                        color: Color(0xFF00FF00),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    TextSpan(
-                      text: branch.playerLine,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // NPC response
-              if (branch.npcResponse.isNotEmpty)
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '$npcName: ',
-                        style: TextStyle(
-                          color: Color(
-                            int.parse(
-                              widget.engine
-                                  .speakerColor(npcId)
-                                  .replaceAll('#', 'FF'),
-                              radix: 16,
-                            ),
-                          ),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      TextSpan(
-                        text: branch.npcResponse,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              const SizedBox(height: 16),
-
-              // Buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            RichText(
+              text: TextSpan(
                 children: [
-                  TextButton(
-                    onPressed: () {
-                      setState(() => _selectedEmotionId = null);
-                    },
-                    child: const Text(
-                      'Outra emoção',
-                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                  TextSpan(
+                    text: '$playerName (${emotion.label}): ',
+                    style: const TextStyle(
+                      color: Color(0xFF00FF00),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () {
-                      widget.engine.advanceLine();
-                      setState(() => _selectedEmotionId = null);
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                    ),
-                    child: const Text('Continuar', style: TextStyle(fontSize: 13)),
+                  TextSpan(
+                    text: playerLine,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
               ),
-            ],
-          ),
-        );
-      }
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => setState(() => _selectedEmotionId = null),
+                  child: const Text(
+                    'Outra emoção',
+                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () {
+                    widget.engine.selectEmotion(_selectedEmotionId!);
+                    setState(() => _selectedEmotionId = null);
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                  ),
+                  child: const Text(
+                    'Continuar',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
     }
 
-    // Show wheel
+    // Show emotion wheel
     return Container(
       decoration: BoxDecoration(
         color: AppColors.dialogueBg,
-        border:
-            const Border(top: BorderSide(color: AppColors.dialogueBorder, width: 1)),
+        border: const Border(
+          top: BorderSide(color: AppColors.dialogueBorder, width: 1),
+        ),
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
           Text(
-            '$playerName → $npcName: Escolhe emoção',
+            '$playerName: Escolhe emoção',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 15,
@@ -687,28 +679,27 @@ class _EmotionDialogueBoxState extends State<_EmotionDialogueBox> {
             ),
           ),
           const SizedBox(height: 20),
-
-          // Emotion wheel
           Center(
             child: EmotionWheel(
               size: 480,
               selectedEmotionId: _selectedEmotionId,
-              onEmotionSelected: (emotionId) async {
-                setState(() => _selectedEmotionId = emotionId);
-                await widget.engine.selectEmotion(emotionId);
+              activeIds: activeIds,
+              onEmotionSelected: (id) {
+                if (activeIds.contains(id)) {
+                  setState(() => _selectedEmotionId = id);
+                }
               },
             ),
           ),
-
           const SizedBox(height: 16),
-
-          // Skip
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: widget.engine.skipDialogue,
-              child: const Text('Saltar',
-                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              child: const Text(
+                'Saltar',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
             ),
           ),
         ],
@@ -735,7 +726,10 @@ class _Portrait extends StatelessWidget {
       height: 110,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: speakerColor.withValues(alpha: 0.6), width: 1.5),
+        border: Border.all(
+          color: speakerColor.withValues(alpha: 0.6),
+          width: 1.5,
+        ),
         color: hasImage ? null : speakerColor.withValues(alpha: 0.12),
       ),
       clipBehavior: Clip.antiAlias,
@@ -745,9 +739,10 @@ class _Portrait extends StatelessWidget {
               child: Text(
                 speakerName.isNotEmpty ? speakerName[0] : '?',
                 style: TextStyle(
-                    color: speakerColor,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold),
+                  color: speakerColor,
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
     );

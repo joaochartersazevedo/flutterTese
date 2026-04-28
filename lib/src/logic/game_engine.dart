@@ -1,13 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import '../data/dialogue_ai_service.dart';
 import '../data/renpy_asset_resolver.dart';
 import '../models/area.dart';
 import '../models/character.dart';
 import '../models/connection.dart';
 import '../models/dialogue.dart';
-import '../models/emotion.dart';
 import '../models/event.dart';
 import '../models/save_data.dart';
 import '../models/state_flag.dart';
@@ -16,7 +14,7 @@ import '../models/world_blueprint.dart';
 
 class GameEngine extends ChangeNotifier {
   GameEngine(this.blueprint, {RenpyAssetResolver? assetResolver})
-      : _assetResolver = assetResolver ?? RenpyAssetResolver.auto() {
+    : _assetResolver = assetResolver ?? RenpyAssetResolver.auto() {
     _resetRuntime();
   }
 
@@ -38,18 +36,12 @@ class GameEngine extends ChangeNotifier {
   final List<String> _log = [];
 
   Dialogue? _currentDialogue;
-  int _currentLineIndex = 0;
+  DialogueNode? _currentNode;
+  int _stepCount = 0;
+  int _totalSteps = 0;
 
-  /// Emotion mode: active when dialogue type is playerChat.
-  bool _emotionModeActive = false;
-
-  /// Conversation history for emotion branches (last 4 exchanges).
-  /// Each entry: (playerEmotion, playerText, npcResponse).
-  final List<(int emotionId, String playerLine, String npcResponse)>
-      _conversationHistory = [];
-
-  /// Rate limiter for AI calls: last call time in minutes.
-  late int _lastAiCallTime;
+  /// Conversation history for emotion choices (last 4 exchanges).
+  final List<(int emotionId, String playerLine)> _conversationHistory = [];
 
   // ---------- HELPERS ----------
 
@@ -89,44 +81,43 @@ class GameEngine extends ChangeNotifier {
 
   List<String> get log => List.unmodifiable(_log.reversed);
   List<Area> get allAreas => [..._areas]..sort((a, b) => a.id.compareTo(b.id));
-  List<StateFlag> get gameStates => [..._gamestates]..sort((a, b) => a.id.compareTo(b.id));
+  List<StateFlag> get gameStates =>
+      [..._gamestates]..sort((a, b) => a.id.compareTo(b.id));
   List<Task> get tasks => [..._tasks]..sort((a, b) => a.id.compareTo(b.id));
   List<Dialogue> get activeDialogues =>
       [..._activeDialogues]..sort((a, b) => b.priority.compareTo(a.priority));
 
   Area get currentArea => _area(_currentAreaId)!;
 
-  List<Connection> get currentConnections => currentArea.connectionIds
-      .map(_conn)
-      .whereType<Connection>()
-      .toList();
+  List<Connection> get currentConnections =>
+      currentArea.connectionIds.map(_conn).whereType<Connection>().toList();
 
   List<Character> get currentCharacters =>
       _characters.where((c) => c.areaId == _currentAreaId).toList();
 
-  List<Dialogue> get currentAreaDialogues => _activeDialogues
-      .where((d) => d.areaId == null || d.areaId == _currentAreaId)
-      .toList()
-    ..sort((a, b) => b.priority.compareTo(a.priority));
+  List<Dialogue> get currentAreaDialogues =>
+      _activeDialogues
+          .where((d) => d.areaId == null || d.areaId == _currentAreaId)
+          .toList()
+        ..sort((a, b) => b.priority.compareTo(a.priority));
 
   bool get isInDialogue => _currentDialogue != null;
   Dialogue? get currentDialogue => _currentDialogue;
 
-  DialogueLine? get currentLine {
-    final d = _currentDialogue;
-    if (d == null || _currentLineIndex >= d.lines.length) return null;
-    return d.lines[_currentLineIndex];
-  }
+  DialogueLine? get currentLine => _currentNode?.line;
 
-  int get currentLineIndex => _currentLineIndex;
-  int get totalLines => _currentDialogue?.lines.length ?? 0;
+  int get currentLineIndex => _stepCount;
 
-  /// True when in playerChat dialogue mode (emotion wheel active).
-  bool get emotionModeActive =>
-      _emotionModeActive && _currentDialogue?.type == DialogueType.playerChat;
+  int get totalLines => _totalSteps;
 
-  /// Last 4 exchanges for AI context. (emotionId, playerLine, npcResponse).
-  List<(int, String, String)> get conversationHistory =>
+  /// True when at a player emotion choice node.
+  bool get emotionModeActive => _currentNode?.isChoice ?? false;
+
+  /// Current choice node when [emotionModeActive] is true.
+  DialogueChoice? get currentChoiceNode => _currentNode?.choice;
+
+  /// Last exchanges for AI context. (emotionId, playerLine).
+  List<(int, String)> get conversationHistory =>
       List.unmodifiable(_conversationHistory);
 
   bool isAreaSelected(Area area) => area.id == _currentAreaId;
@@ -150,7 +141,7 @@ class GameEngine extends ChangeNotifier {
 
   /// Returns absolute path to speaker portrait for given emotion.
   /// Falls back to default portrait, then empty string.
-  String speakerPortraitPath(int speakerId, int emotionId) {
+  String speakerPortraitPath(int speakerId, int? emotionId) {
     final char = _char(speakerId);
     if (char == null || char.portraitPath.isEmpty) return '';
 
@@ -159,16 +150,19 @@ class GameEngine extends ChangeNotifier {
     final rel = char.portraitPath;
     final dir = p.dirname(rel);
     final stem = p.basenameWithoutExtension(rel);
-    final emotionRel = p.join(dir, stem, 'portrait ($emotionId).png');
-    if (_assetResolver.exists(emotionRel)) return _assetResolver.resolve(emotionRel);
+    final portraitId = emotionId ?? 0;
+    final emotionRel = p.join(dir, stem, 'portrait ($portraitId).png');
+    if (_assetResolver.exists(emotionRel))
+      return _assetResolver.resolve(emotionRel);
 
     // Fall back to default portrait
     if (_assetResolver.exists(rel)) return _assetResolver.resolve(rel);
     return '';
   }
 
-  List<Task> get activeTasks => _tasks.where((t) => t.active && !t.completed).toList()
-    ..sort((a, b) => a.id.compareTo(b.id));
+  List<Task> get activeTasks =>
+      _tasks.where((t) => t.active && !t.completed).toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
 
   String areaBackgroundAbsolutePath(Area area) =>
       _assetResolver.resolve(area.backgroundPath);
@@ -219,94 +213,39 @@ class GameEngine extends ChangeNotifier {
     final d = _find(_activeDialogues, (d) => d.id == dialogueId);
     if (d == null) return;
     _currentDialogue = d;
-    _currentLineIndex = 0;
-    _emotionModeActive = d.type == DialogueType.playerChat;
-    if (_emotionModeActive) {
-      _conversationHistory.clear();
-      _lastAiCallTime = _elapsedMinutes;
-    }
+    _currentNode = d.parentNode;
+    _stepCount = 0;
+    _totalSteps = _countChain(d.parentNode);
+    _conversationHistory.clear();
     _logLine('Dialogo: ${d.name}');
     notifyListeners();
   }
 
-  /// Player selected emotion in wheelUI. Continues dialogue with emotion branch.
-  /// Triggers AI response generation if needed.
-  Future<void> selectEmotion(int emotionId) async {
-    if (!_emotionModeActive || _currentDialogue == null) return;
-    final branch = _currentDialogue!.playerEmotions[emotionId];
-    if (branch == null) return;
+  /// Player selected emotion at current choice node. Advances past it.
+  void selectEmotion(int emotionId) {
+    if (!emotionModeActive || _currentNode == null) return;
+    final choice = _currentNode!.choice!;
 
-    // Time advance: +30s for emotion choice
-    _elapsedMinutes += 1; // 30s~1m rounding
+    _elapsedMinutes += 1;
     _minutesSincePopulate += 1;
+    _conversationHistory.add((emotionId, choice.choices[emotionId] ?? ''));
+    if (_conversationHistory.length > 4) _conversationHistory.removeAt(0);
 
-    // Add to history (keep last 4)
-    _conversationHistory.add((
-      emotionId,
-      branch.playerLine,
-      branch.npcResponse,
-    ));
-    if (_conversationHistory.length > 4) {
-      _conversationHistory.removeAt(0);
+    _currentNode = _currentNode!.children?[emotionId] ?? _currentNode!.nextNode;
+    _stepCount++;
+    if (_currentNode == null) {
+      _closeDialogue();
+    } else {
+      notifyListeners();
     }
-
-    // Generate response if empty + rate check  
-    if (branch.npcResponse.isEmpty &&
-        (_elapsedMinutes - _lastAiCallTime) >= 5) {
-      try {
-        final npc = _char(_currentDialogue!.characterIds.firstWhere(
-          (id) => id != 0,
-          orElse: () => 1,
-        ));
-        final generated = await _generateEmotionResponse(
-          emotionId,
-          npc?.name ?? 'NPC',
-          _currentDialogue!.topic ?? 'life',
-        );
-        _conversationHistory[_conversationHistory.length - 1] = (
-          emotionId,
-          branch.playerLine,
-          generated,
-        );
-        _lastAiCallTime = _elapsedMinutes;
-      } catch (e) {
-        _logLine('Erro AI: ${e.toString().split('\n').first}');
-      }
-    }
-
-    _currentLineIndex++;
-    notifyListeners();
-  }
-
-  /// Generate NPC response based on emotion, character, topic + conversation history.
-  Future<String> _generateEmotionResponse(
-    int emotionId,
-    String npcName,
-    String topic,
-  ) async {
-    // Build prompt with conversation context
-    final lastExchanges = _conversationHistory
-        .map((e) => 'Jogador [${e.$1}]: ${e.$2}\n$npcName: ${e.$3}')
-        .join('\n\n');
-
-    final emotionName = getEmotion(emotionId).toString();
-    final prompt = '''
-Context: Conversation with $npcName about $topic.
-Player emotion: $emotionName
-
-Previous exchanges:
-$lastExchanges
-
-Respond naturally and briefly (1-2 sentences) as $npcName to the player's last emotional choice.
-''';
-
-    return DialogueAiService.instance.generateLine(prompt);
   }
 
   void advanceLine() {
-    if (_currentDialogue == null) return;
-    _currentLineIndex++;
-    if (_currentLineIndex >= _currentDialogue!.lines.length) {
+    final node = _currentNode;
+    if (node == null || !node.isLine) return;
+    _currentNode = node.nextNode;
+    _stepCount++;
+    if (_currentNode == null) {
       _closeDialogue();
     } else {
       notifyListeners();
@@ -325,14 +264,29 @@ Respond naturally and briefly (1-2 sentences) as $npcName to the player's last e
     }
     _logLine('Dialogo concluido: ${d.name}');
     _currentDialogue = null;
-    _currentLineIndex = 0;
+    _currentNode = null;
+    _stepCount = 0;
     _tick();
+  }
+
+  int _countChain(DialogueNode? node) {
+    var count = 0;
+    var n = node;
+    while (n != null) {
+      count++;
+      n = n.nextNode;
+    }
+    return count;
   }
 
   void completeTask(int taskId) {
     final t = _task(taskId);
     if (t == null || !t.active || t.completed) return;
-    _replace(_tasks, (x) => x.id == taskId, t.copyWith(active: false, completed: true));
+    _replace(
+      _tasks,
+      (x) => x.id == taskId,
+      t.copyWith(active: false, completed: true),
+    );
     _applyConsequences(t.consequences);
     _logLine('Tarefa concluida: ${t.name}');
     _tick();
@@ -342,9 +296,16 @@ Respond naturally and briefly (1-2 sentences) as $npcName to the player's last e
 
   void _resetRuntime() {
     _areas = blueprint.areas.values
-        .map((a) => a.copyWith(connectionIds: List<int>.from(a.connectionIds), clearDialogueId: true))
+        .map(
+          (a) => a.copyWith(
+            connectionIds: List<int>.from(a.connectionIds),
+            clearDialogueId: true,
+          ),
+        )
         .toList();
-    _connections = blueprint.connections.values.map((c) => c.copyWith()).toList();
+    _connections = blueprint.connections.values
+        .map((c) => c.copyWith())
+        .toList();
     _characters = blueprint.characters.values.toList();
     _gamestates = blueprint.gamestates.values.map((g) => g.copyWith()).toList();
     _dialoguesPool = blueprint.dialogues.values.toList();
@@ -358,10 +319,9 @@ Respond naturally and briefly (1-2 sentences) as $npcName to the player's last e
     _elapsedMinutes = 0;
     _minutesSincePopulate = 0;
     _currentDialogue = null;
-    _currentLineIndex = 0;
-    _emotionModeActive = false;
+    _currentNode = null;
+    _stepCount = 0;
     _conversationHistory.clear();
-    _lastAiCallTime = 0;
 
     _log
       ..clear()
@@ -407,7 +367,11 @@ Respond naturally and briefly (1-2 sentences) as $npcName to the player's last e
         if (t.completed) continue;
         final shouldActive = _conditionsMet(t.preconditions);
         if (t.active != shouldActive) {
-          _replace(_tasks, (x) => x.id == t.id, t.copyWith(active: shouldActive));
+          _replace(
+            _tasks,
+            (x) => x.id == t.id,
+            t.copyWith(active: shouldActive),
+          );
           if (shouldActive) _logLine('Nova tarefa: ${t.name}.');
           changed = true;
         }
@@ -432,8 +396,14 @@ Respond naturally and briefly (1-2 sentences) as $npcName to the player's last e
         if (area != null) {
           final locked = event.type == EventType.disableArea;
           if (area.locked != locked) {
-            _replace(_areas, (a) => a.id == area.id, area.copyWith(locked: locked));
-            _logLine('Area ${area.name} ${locked ? "bloqueada" : "desbloqueada"}.');
+            _replace(
+              _areas,
+              (a) => a.id == area.id,
+              area.copyWith(locked: locked),
+            );
+            _logLine(
+              'Area ${area.name} ${locked ? "bloqueada" : "desbloqueada"}.',
+            );
             changed = true;
           }
         }

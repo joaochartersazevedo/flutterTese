@@ -4,14 +4,17 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import '../models/dialogue.dart';
 
 const _apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
 const _defaultModel = 'openrouter/free';
 
 List<String> _candidateDirs() {
   final cwd = Directory.current.path;
-  return [cwd, p.normalize(p.join(cwd, '..')), p.normalize(p.join(cwd, '..', '..'))];
+  return [
+    cwd,
+    p.normalize(p.join(cwd, '..')),
+    p.normalize(p.join(cwd, '..', '..')),
+  ];
 }
 
 /// Reads project.json from the Renpy project directory (same pattern as Renpy).
@@ -19,36 +22,49 @@ Map<String, dynamic> _loadProjectJson() {
   for (final dir in _candidateDirs()) {
     final f = File(p.join(dir, 'project.json'));
     if (f.existsSync()) {
-      try { return jsonDecode(f.readAsStringSync()) as Map<String, dynamic>; } catch (_) {}
+      try {
+        return jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+      } catch (_) {}
     }
   }
   return {};
 }
 
 /// Reads OPENROUTER key from a .env file.
-/// Supports `OPENROUTER_API_KEY=sk-...` and non-standard `openrouter key: sk-...`.
+/// Supports JSON format, `OPENROUTER_API_KEY=sk-...`, and non-standard `openrouter key: sk-...`.
 String _loadDotEnvKey() {
   for (final dir in _candidateDirs()) {
     final f = File(p.join(dir, '.env'));
     if (!f.existsSync()) continue;
-    for (final line in f.readAsLinesSync()) {
-      final trimmed = line.trim();
-      if (trimmed.startsWith('#') || trimmed.isEmpty) continue;
-      // Standard: KEY=value
-      final eqIdx = trimmed.indexOf('=');
-      if (eqIdx > 0) {
-        final key = trimmed.substring(0, eqIdx).trim().toUpperCase();
-        if (key == 'OPENROUTER_API_KEY' || key == 'OPENROUTER_KEY') {
-          return trimmed.substring(eqIdx + 1).trim();
+    try {
+      // Try JSON format first
+      final content = f.readAsStringSync();
+      final data = jsonDecode(content) as Map<String, dynamic>;
+      final key =
+          (data['OPENROUTER_API_KEY'] ?? data['openrouter_api_key'] ?? '')
+              as String;
+      if (key.isNotEmpty) return key;
+    } catch (_) {
+      // Not JSON, try line-by-line parsing
+      for (final line in f.readAsLinesSync()) {
+        final trimmed = line.trim();
+        if (trimmed.startsWith('#') || trimmed.isEmpty) continue;
+        // Standard: KEY=value
+        final eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          final key = trimmed.substring(0, eqIdx).trim().toUpperCase();
+          if (key == 'OPENROUTER_API_KEY' || key == 'OPENROUTER_KEY') {
+            return trimmed.substring(eqIdx + 1).trim();
+          }
         }
-      }
-      // Non-standard: "openrouter key: value"
-      final lc = trimmed.toLowerCase();
-      if (lc.startsWith('openrouter')) {
-        final colonIdx = trimmed.indexOf(':');
-        if (colonIdx > 0) {
-          final val = trimmed.substring(colonIdx + 1).trim();
-          if (val.isNotEmpty) return val;
+        // Non-standard: "openrouter key: value"
+        final lc = trimmed.toLowerCase();
+        if (lc.startsWith('openrouter')) {
+          final colonIdx = trimmed.indexOf(':');
+          if (colonIdx > 0) {
+            final val = trimmed.substring(colonIdx + 1).trim();
+            if (val.isNotEmpty) return val;
+          }
         }
       }
     }
@@ -63,14 +79,21 @@ class DialogueAiService {
   String? _apiKeyOverride;
 
   String get apiKey {
-    if (_apiKeyOverride != null && _apiKeyOverride!.isNotEmpty) return _apiKeyOverride!;
-    final envKey = Platform.environment['OPENROUTER_API_KEY'] ??
+    if (_apiKeyOverride != null && _apiKeyOverride!.isNotEmpty) {
+      return _apiKeyOverride!;
+    }
+    final envKey =
+        Platform.environment['OPENROUTER_API_KEY'] ??
         Platform.environment['OPENROUTER_KEY'];
     if (envKey != null && envKey.isNotEmpty) return envKey;
     final dotEnvKey = _loadDotEnvKey();
     if (dotEnvKey.isNotEmpty) return dotEnvKey;
     final proj = _loadProjectJson();
-    return (proj['OPENROUTER_API_KEY'] ?? proj['openrouter_api_key'] ?? proj['api_key'] ?? '') as String;
+    return (proj['OPENROUTER_API_KEY'] ??
+            proj['openrouter_api_key'] ??
+            proj['api_key'] ??
+            '')
+        as String;
   }
 
   void setApiKey(String key) => _apiKeyOverride = key;
@@ -97,16 +120,18 @@ class DialogueAiService {
       'temperature': 0.75,
     });
 
-    final resp = await http.post(
-      Uri.parse(_apiUrl),
-      headers: {
-        'Authorization': 'Bearer $key',
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'http://localhost',
-        'X-Title': 'VisualNovelEditor',
-      },
-      body: body,
-    ).timeout(const Duration(seconds: 30));
+    final resp = await http
+        .post(
+          Uri.parse(_apiUrl),
+          headers: {
+            'Authorization': 'Bearer $key',
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'http://localhost',
+            'X-Title': 'VisualNovelEditor',
+          },
+          body: body,
+        )
+        .timeout(const Duration(seconds: 30));
 
     if (resp.statusCode != 200) {
       throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
@@ -124,7 +149,9 @@ class DialogueAiService {
     required String context,
     String previousLine = '',
   }) async {
-    final hist = previousLine.isNotEmpty ? '\nPrevious line: "$previousLine"' : '';
+    final hist = previousLine.isNotEmpty
+        ? '\nPrevious line: "$previousLine"'
+        : '';
     final prompt =
         'Visual novel character "$speakerName" is speaking.$hist\n'
         'Context: $context\n'
@@ -159,15 +186,18 @@ class DialogueAiService {
     if (match == null) throw Exception('No JSON in response');
     final list = jsonDecode(match.group(0)!) as List;
     return list
-        .map((e) => (
-              speaker: (e as Map)['speaker'] as String? ?? '',
-              text: e['text'] as String? ?? '',
-            ))
+        .map(
+          (e) => (
+            speaker: (e as Map)['speaker'] as String? ?? '',
+            text: e['text'] as String? ?? '',
+          ),
+        )
         .toList();
   }
 
-  /// Generate playerChat emotion branches for given emotion IDs.
-  Future<Map<int, PlayerEmotionBranch>> generateEmotionBranches({
+  /// Generate player lines for each emotion in a playerChat choice node.
+  /// Returns emotionId → player line text (one short line per emotion).
+  Future<Map<int, String>> generatePlayerLines({
     required List<int> emotionIds,
     required String topic,
     required String npcName,
@@ -178,41 +208,39 @@ class DialogueAiService {
         .join(', ');
 
     final prompt =
-        'Visual novel NPC: $npcName. Topic: $topic.\n'
-        'For EACH emotion below, write:\n'
-        '1. One short player line (first-person, that emotion)\n'
-        '2. One NPC response ($npcName)\n'
+        'Visual novel. NPC: $npcName. Topic: $topic.\n'
+        'For EACH emotion below, write ONE short first-person player line '
+        'expressing that emotion.\n'
         'Return ONLY JSON, no prose:\n'
-        '{"EmotionName": {"player": "...", "npc": "..."}, ...}\n'
+        '{"EmotionName": "player line text", ...}\n'
         'Emotions: $selected\n'
-        'Each line under 25 words. European Portuguese.';
+        'Each line under 20 words. European Portuguese. (PT-PT)';
 
-    final raw = await _call(prompt, maxTokens: emotionIds.length * 80);
+    final raw = await _call(prompt, maxTokens: emotionIds.length * 40);
 
     final match = RegExp(r'\{.*\}', dotAll: true).firstMatch(raw);
     if (match == null) throw Exception('No JSON in response');
     final map = jsonDecode(match.group(0)!) as Map<String, dynamic>;
 
-    final result = <int, PlayerEmotionBranch>{};
-    for (var id in emotionIds) {
+    final result = <int, String>{};
+    for (final id in emotionIds) {
       if (id < 0 || id >= _emotionNames.length) continue;
       final name = _emotionNames[id];
-      final entry = map[name] as Map<String, dynamic>?;
-      if (entry == null) continue;
-      result[id] = PlayerEmotionBranch(
-        emotionId: id,
-        playerLine: (entry['player'] as String? ?? '').trim(),
-        npcResponse: (entry['npc'] as String? ?? '').trim(),
-      );
+      final text = (map[name] as String? ?? '').trim();
+      if (text.isNotEmpty) result[id] = text;
     }
     return result;
   }
 }
 
-/// Emotion names matching EMOTION_WHEEL in player_interaction.rpy (index = emotionId).
+/// Emotion names for AI prompts (index = emotionId, matches emotionWheel in emotion.dart).
 const _emotionNames = [
-  'Alert', 'Happy', 'Contented', 'Relaxed',
-  'Fatigued', 'Sad', 'Upset', 'Nervous',
-  'Excited', 'Elated', 'Serene', 'Calm',
-  'Lethargic', 'Depressed', 'Angry', 'Tense',
+  'Furioso', // 0
+  'Nervoso', // 1
+  'Alegre', // 2
+  'Triste', // 3
+  'Animado', // 4
+  'Enojado', // 5
+  'Calmo', // 6
+  'Contente', // 7
 ];

@@ -57,7 +57,11 @@ class EditorMain extends StatelessWidget {
                   color: AppColors.primaryDim,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Icon(Icons.auto_stories, size: 16, color: AppColors.primaryLight),
+                child: const Icon(
+                  Icons.auto_stories,
+                  size: 16,
+                  color: AppColors.primaryLight,
+                ),
               ),
               const SizedBox(width: 10),
               const Text('Editor de Historia'),
@@ -67,17 +71,19 @@ class EditorMain extends StatelessWidget {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: _tabs
-                .map((t) => Tab(
-                      height: 42,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(t.icon, size: 15),
-                          const SizedBox(width: 6),
-                          Text(t.label),
-                        ],
-                      ),
-                    ))
+                .map(
+                  (t) => Tab(
+                    height: 42,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(t.icon, size: 15),
+                        const SizedBox(width: 6),
+                        Text(t.label),
+                      ],
+                    ),
+                  ),
+                )
                 .toList(),
           ),
           actions: [
@@ -88,7 +94,10 @@ class EditorMain extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.textSecondary,
                 side: const BorderSide(color: AppColors.border),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -98,7 +107,10 @@ class EditorMain extends StatelessWidget {
               label: const Text('Jogar'),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.teal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
               ),
             ),
             const SizedBox(width: 16),
@@ -128,7 +140,8 @@ class _AreaTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = editor.areas.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+    final items = editor.areas.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
     return _ImageGrid<Area>(
       items: items,
       onAdd: () async {
@@ -143,11 +156,17 @@ class _AreaTab extends StatelessWidget {
         onEdit: () async {
           final result = await Navigator.push<Area>(
             context,
-            MaterialPageRoute(builder: (_) => AddAreaScreen(editor: editor, existing: area)),
+            MaterialPageRoute(
+              builder: (_) => AddAreaScreen(editor: editor, existing: area),
+            ),
           );
           if (result != null) editor.updateArea(result);
         },
-        onDelete: () => _confirmDelete(context, area.name, () => editor.removeArea(area.id)),
+        onDelete: () => _confirmDelete(
+          context,
+          area.name,
+          () => editor.removeArea(area.id),
+        ),
       ),
     );
   }
@@ -161,7 +180,8 @@ class _ConnectionTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = editor.connections.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+    final items = editor.connections.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
     return _EntityList<Connection>(
       items: items,
       label: (c) {
@@ -169,7 +189,9 @@ class _ConnectionTab extends StatelessWidget {
         final b = editor.areas[c.areaB]?.name ?? 'A${c.areaB}';
         return '$a ↔ $b';
       },
-      subtitle: (c) => '${c.travelMinutes} min${c.locked ? " · bloqueada" : ""}',
+      subtitle: (c) =>
+          '${c.travelMinutes} min${c.locked ? " · bloqueada" : ""}',
+      onDelete: (c) => editor.removeConnection(c.id),
       onAdd: () async {
         if (editor.areas.length < 2) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -179,11 +201,12 @@ class _ConnectionTab extends StatelessWidget {
         }
         final result = await Navigator.push<Connection>(
           context,
-          MaterialPageRoute(builder: (_) => AddConnectionScreen(editor: editor)),
+          MaterialPageRoute(
+            builder: (_) => AddConnectionScreen(editor: editor),
+          ),
         );
         if (result != null) editor.addConnection(result);
       },
-      onDelete: (c) => editor.removeConnection(c.id),
     );
   }
 }
@@ -216,7 +239,9 @@ class _CharacterTab extends StatelessWidget {
           final result = await Navigator.push<Character>(
             context,
             MaterialPageRoute(
-                builder: (_) => AddCharacterScreen(editor: editor, existing: char)),
+              builder: (_) =>
+                  AddCharacterScreen(editor: editor, existing: char),
+            ),
           );
           if (result != null) editor.updateCharacter(result);
         },
@@ -240,7 +265,8 @@ class _StateFlagTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = editor.gamestates.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+    final items = editor.gamestates.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
     return _EntityList<StateFlag>(
       items: items,
       label: (s) => s.name,
@@ -260,7 +286,9 @@ class _StateFlagTab extends StatelessWidget {
       onEdit: (s) async {
         final result = await Navigator.push<StateFlag>(
           context,
-          MaterialPageRoute(builder: (_) => AddStateFlagScreen(editor: editor, existing: s)),
+          MaterialPageRoute(
+            builder: (_) => AddStateFlagScreen(editor: editor, existing: s),
+          ),
         );
         if (result != null) editor.updateStateFlag(result);
       },
@@ -277,11 +305,11 @@ class _DialogueTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = editor.dialogues.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+    final items = editor.dialogues.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
     return _EntityList<Dialogue>(
       items: items,
       label: (d) => d.name,
-      subtitle: (d) => '${d.type.name} · ${d.lines.length} linhas · prioridade ${d.priority}',
       onAdd: () async {
         final result = await Navigator.push<Dialogue>(
           context,
@@ -292,7 +320,9 @@ class _DialogueTab extends StatelessWidget {
       onEdit: (d) async {
         final result = await Navigator.push<Dialogue>(
           context,
-          MaterialPageRoute(builder: (_) => AddDialogueScreen(editor: editor, existing: d)),
+          MaterialPageRoute(
+            builder: (_) => AddDialogueScreen(editor: editor, existing: d),
+          ),
         );
         if (result != null) editor.updateDialogue(result);
       },
@@ -309,7 +339,8 @@ class _TaskTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = editor.tasks.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+    final items = editor.tasks.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
     return _EntityList<Task>(
       items: items,
       label: (t) => t.name,
@@ -334,7 +365,8 @@ class _EventTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = editor.events.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+    final items = editor.events.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
     return _EntityList<Event>(
       items: items,
       label: (e) => e.name,
@@ -360,9 +392,15 @@ void _confirmDelete(BuildContext context, String name, VoidCallback onConfirm) {
       title: const Text('Eliminar?'),
       content: Text('Eliminar "$name"?'),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
         FilledButton(
-          onPressed: () { Navigator.pop(context); onConfirm(); },
+          onPressed: () {
+            Navigator.pop(context);
+            onConfirm();
+          },
           child: const Text('Eliminar'),
         ),
       ],
@@ -397,19 +435,25 @@ class _ImageGrid<T> extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.inbox_outlined, size: 48, color: AppColors.textMuted),
+                  Icon(
+                    Icons.inbox_outlined,
+                    size: 48,
+                    color: AppColors.textMuted,
+                  ),
                   const SizedBox(height: 12),
-                  Text('Sem entradas',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(color: AppColors.textMuted)),
+                  Text(
+                    'Sem entradas',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text('Clica + para adicionar',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: AppColors.textMuted)),
+                  Text(
+                    'Clica + para adicionar',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+                  ),
                 ],
               ),
             )
@@ -418,7 +462,9 @@ class _ImageGrid<T> extends StatelessWidget {
               child: Wrap(
                 spacing: 16,
                 runSpacing: 16,
-                children: items.map((item) => cardBuilder(context, item)).toList(),
+                children: items
+                    .map((item) => cardBuilder(context, item))
+                    .toList(),
               ),
             ),
     );
@@ -466,8 +512,11 @@ class _AreaCard extends StatelessWidget {
                   : Container(
                       color: AppColors.surfaceHighlight,
                       child: const Center(
-                        child: Icon(Icons.landscape_outlined,
-                            size: 32, color: AppColors.textMuted),
+                        child: Icon(
+                          Icons.landscape_outlined,
+                          size: 32,
+                          color: AppColors.textMuted,
+                        ),
                       ),
                     ),
             ),
@@ -479,21 +528,32 @@ class _AreaCard extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(area.name,
-                            style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          area.name,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       if (area.locked)
-                        const Icon(Icons.lock, size: 13, color: AppColors.textMuted),
+                        const Icon(
+                          Icons.lock,
+                          size: 13,
+                          color: AppColors.textMuted,
+                        ),
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text('ID ${area.id} · ${area.connectionIds.length} conexões',
-                      style: const TextStyle(
-                          color: AppColors.textMuted, fontSize: 11)),
+                  Text(
+                    'ID ${area.id} · ${area.connectionIds.length} conexões',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -544,7 +604,9 @@ class _CharacterCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final absPath = _resolver.resolve(character.portraitPath);
-    final portraitFile = character.portraitPath.isNotEmpty ? File(absPath) : null;
+    final portraitFile = character.portraitPath.isNotEmpty
+        ? File(absPath)
+        : null;
     final hasPortrait = portraitFile != null && portraitFile.existsSync();
     final charColor = _hexColor(character.colorHex);
 
@@ -571,9 +633,10 @@ class _CharacterCard extends StatelessWidget {
                         child: Text(
                           character.name.isNotEmpty ? character.name[0] : '?',
                           style: TextStyle(
-                              color: charColor,
-                              fontSize: 48,
-                              fontWeight: FontWeight.bold),
+                            color: charColor,
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
@@ -586,12 +649,15 @@ class _CharacterCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(character.name,
-                      style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    character.name,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 2),
                   Row(
                     children: [
@@ -605,10 +671,14 @@ class _CharacterCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 5),
                       Expanded(
-                        child: Text(areaName,
-                            style: const TextStyle(
-                                color: AppColors.textMuted, fontSize: 11),
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          areaName,
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 11,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
@@ -664,6 +734,8 @@ class _EntityList<T> extends StatelessWidget {
   final void Function(T) onDelete;
   final void Function(T)? onEdit;
 
+  static const double _cardWidth = 260;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -678,38 +750,59 @@ class _EntityList<T> extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.inbox_outlined, size: 48, color: AppColors.textMuted),
+                  Icon(
+                    Icons.inbox_outlined,
+                    size: 48,
+                    color: AppColors.textMuted,
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     'Sem entradas',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(color: AppColors.textMuted),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: AppColors.textMuted,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Clica + para adicionar',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: AppColors.textMuted),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
                   ),
                 ],
               ),
             )
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                final t = trailing?.call(item);
-                return _EntityCard(
-                  label: label(item),
-                  subtitle: subtitle?.call(item),
-                  trailing: t,
-                  onEdit: onEdit != null ? () => onEdit!(item) : null,
-                  onDelete: () => _confirmDelete(context, label(item), () => onDelete(item)),
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final maxWidth = (constraints.maxWidth - 40)
+                    .clamp(200.0, _cardWidth)
+                    .toDouble();
+                final textScale = MediaQuery.textScaleFactorOf(context);
+                final rowHeight = 104 * textScale;
+                return GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: maxWidth,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    mainAxisExtent: rowHeight,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final t = trailing?.call(item);
+                    return _EntityCard(
+                      label: label(item),
+                      subtitle: subtitle?.call(item),
+                      trailing: t,
+                      onEdit: onEdit != null ? () => onEdit!(item) : null,
+                      onDelete: () => _confirmDelete(
+                        context,
+                        label(item),
+                        () => onDelete(item),
+                      ),
+                    );
+                  },
                 );
               },
             ),
@@ -737,7 +830,6 @@ class _EntityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: AppColors.surfaceElevated,
         borderRadius: BorderRadius.circular(10),
@@ -745,9 +837,26 @@ class _EntityCard extends StatelessWidget {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        title: Text(label, style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w500)),
+        title: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         subtitle: subtitle != null
-            ? Text(subtitle!, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12))
+            ? Text(
+                subtitle!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              )
             : null,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
