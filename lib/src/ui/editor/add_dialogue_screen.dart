@@ -452,7 +452,7 @@ class _FlagRow extends StatelessWidget {
 // TREE VIEW  (recursive)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _TreeView extends StatelessWidget {
+class _TreeView extends StatefulWidget {
   const _TreeView({
     required this.root,
     required this.chars,
@@ -468,83 +468,153 @@ class _TreeView extends StatelessWidget {
   final int? emotionId;
 
   @override
+  State<_TreeView> createState() => _TreeViewState();
+}
+
+class _TreeViewState extends State<_TreeView> {
+  final _rowKey = GlobalKey();
+  final Map<int, GlobalKey> _branchKeys = {};
+  List<double> _branchCenters = [];
+
+  void _scheduleMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _doMeasure();
+    });
+  }
+
+  void _doMeasure() {
+    final rowCtx = _rowKey.currentContext;
+    if (rowCtx == null) return;
+    final rowBox = rowCtx.findRenderObject() as RenderBox;
+
+    final measures = <MapEntry<int, double>>[];
+    for (final entry in _branchKeys.entries) {
+      final ctx = entry.value.currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject() as RenderBox;
+      final local = rowBox.globalToLocal(box.localToGlobal(Offset.zero));
+      measures.add(MapEntry(entry.key, local.dx + box.size.width / 2));
+    }
+    measures.sort((a, b) => a.key.compareTo(b.key));
+
+    final centers = measures.map((e) => e.value).toList();
+    if (mounted && !_listEq(centers, _branchCenters)) {
+      setState(() => _branchCenters = centers);
+    }
+  }
+
+  static bool _listEq(List<double> a, List<double> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final sortedEntries =
+        widget.root.isChoice && (widget.root.children ?? {}).isNotEmpty
+            ? (widget.root.children!.entries.toList()
+              ..sort((a, b) => a.key.compareTo(b.key)))
+            : <MapEntry<int, DialogueNode>>[];
+
+    _branchKeys.removeWhere(
+        (k, _) => !sortedEntries.any((e) => e.key == k));
+    for (final entry in sortedEntries) {
+      _branchKeys.putIfAbsent(entry.key, () => GlobalKey());
+    }
+
+    if (sortedEntries.isNotEmpty) _scheduleMeasure();
+
     return IntrinsicWidth(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // ── Node card ──────────────────────────────────────────────────
           _NodeCard(
-            node: root,
-            chars: chars,
-            onChanged: onChanged,
-            onRemoveSelf: onRemoveSelf,
+            node: widget.root,
+            chars: widget.chars,
+            onChanged: widget.onChanged,
+            onRemoveSelf: widget.onRemoveSelf,
           ),
 
           // ── Choice branches (side-by-side) ─────────────────────────────
-          if (root.isChoice) ...[
+          if (widget.root.isChoice) ...[
             const SizedBox(height: 8),
-            _AddBranchBar(node: root, onChanged: onChanged),
-            if ((root.children ?? {}).isNotEmpty) ...[
+            _AddBranchBar(node: widget.root, onChanged: widget.onChanged),
+            if (sortedEntries.isNotEmpty) ...[
               const SizedBox(height: 8),
-              _drawBranchConnector(),
-              const SizedBox(height: 4),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Stack(
                 children: [
-                  for (final entry in (root.children!.entries.toList()
-                    ..sort((a, b) => a.key.compareTo(b.key)))) ...[
-                    _BranchColumn(
-                      emotionId: entry.key,
-                      branchRoot: entry.value,
-                      chars: chars,
-                      parentChoiceNode: root,
-                      onChanged: onChanged,
+                  Column(
+                    children: [
+                      const SizedBox(height: 28),
+                      Row(
+                        key: _rowKey,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (int i = 0; i < sortedEntries.length; i++) ...[
+                            Container(
+                              key: _branchKeys[sortedEntries[i].key],
+                              child: _BranchColumn(
+                                emotionId: sortedEntries[i].key,
+                                branchRoot: sortedEntries[i].value,
+                                chars: widget.chars,
+                                parentChoiceNode: widget.root,
+                                onChanged: widget.onChanged,
+                              ),
+                            ),
+                            if (i < sortedEntries.length - 1)
+                              const SizedBox(width: 12),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    height: 24,
+                    child: CustomPaint(
+                      painter: _ForkPainter(branchCenters: _branchCenters),
                     ),
-                    const SizedBox(width: 12),
-                  ],
+                  ),
                 ],
               ),
             ],
           ],
 
           // ── Linear next-node ───────────────────────────────────────────
-          if (root.nextNode != null) ...[
+          if (widget.root.nextNode != null) ...[
             _Connector(),
             _TreeView(
-              root: root.nextNode!,
-              chars: chars,
-              onChanged: onChanged,
+              root: widget.root.nextNode!,
+              chars: widget.chars,
+              onChanged: widget.onChanged,
               onRemoveSelf: () {
-                // splice out: keep the tail
-                root.nextNode = root.nextNode!.nextNode;
-                onChanged();
+                widget.root.nextNode = widget.root.nextNode!.nextNode;
+                widget.onChanged();
               },
             ),
-          ] else if (!root.isChoice) ...[
+          ] else if (!widget.root.isChoice) ...[
             _Connector(),
             _AddNodeButtons(
               onAddLine: () {
-                root.nextNode = DialogueNode(
+                widget.root.nextNode = DialogueNode(
                     line: DialogueLine(speakerId: 0, text: ''));
-                onChanged();
+                widget.onChanged();
               },
               onAddChoice: () {
-                root.nextNode = DialogueNode(choice: DialogueChoice());
-                onChanged();
+                widget.root.nextNode = DialogueNode(choice: DialogueChoice());
+                widget.onChanged();
               },
             ),
           ],
         ],
       ),
-    );
-  }
-
-  Widget _drawBranchConnector() {
-    return SizedBox(
-      width: 320,
-      height: 12,
-      child: CustomPaint(painter: _ForkPainter()),
     );
   }
 }
@@ -987,17 +1057,49 @@ class _VLinePainter extends CustomPainter {
 }
 
 class _ForkPainter extends CustomPainter {
+  const _ForkPainter({required this.branchCenters});
+
+  final List<double> branchCenters;
+
   @override
   void paint(Canvas canvas, Size size) {
+    if (branchCenters.isEmpty) return;
+
     final paint = Paint()
       ..color = AppColors.border
       ..strokeWidth = 1.5;
+
+    final parentCx = size.width / 2;
+    final midY = size.height * 0.5;
+
+    canvas.drawLine(Offset(parentCx, 0), Offset(parentCx, midY), paint);
+
+    if (branchCenters.length == 1) {
+      canvas.drawLine(
+          Offset(branchCenters.first, midY),
+          Offset(branchCenters.first, size.height),
+          paint);
+      return;
+    }
+
     canvas.drawLine(
-        Offset(size.width / 2, 0), Offset(size.width / 2, size.height), paint);
+      Offset(branchCenters.first, midY),
+      Offset(branchCenters.last, midY),
+      paint,
+    );
+    for (final cx in branchCenters) {
+      canvas.drawLine(Offset(cx, midY), Offset(cx, size.height), paint);
+    }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
+  bool shouldRepaint(covariant _ForkPainter old) {
+    if (old.branchCenters.length != branchCenters.length) return true;
+    for (var i = 0; i < branchCenters.length; i++) {
+      if (old.branchCenters[i] != branchCenters[i]) return true;
+    }
+    return false;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
