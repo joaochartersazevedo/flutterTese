@@ -179,9 +179,12 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                   ),
                 ),
                 Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SingleChildScrollView(
+                  child: InteractiveViewer(
+                    constrained: false,
+                    boundaryMargin: const EdgeInsets.all(500),
+                    minScale: 0.3,
+                    maxScale: 2.0,
+                    child: Padding(
                       padding: const EdgeInsets.all(20),
                       child: _TreeView(
                         root: _root,
