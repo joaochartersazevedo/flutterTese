@@ -298,12 +298,20 @@ String _buildCharacterContext(List<Character> subjects, List<Character> allChars
 
 /// Emotion names for AI prompts (index = emotionId, matches emotionWheel in emotion.dart).
 const _emotionNames = [
-  'Furioso', // 0
-  'Nervoso', // 1
-  'Alegre', // 2
-  'Triste', // 3
-  'Animado', // 4
-  'Enojado', // 5
-  'Calmo', // 6
-  'Contente', // 7
+  'Furioso',       // 0 — θ=315°
+  'Nervoso',       // 1 — θ=270°
+  'Alegre',        // 2 — θ=45°
+  'Triste',        // 3 — θ=225°
+  'Animado',       // 4 — θ=67.5°
+  'Enojado',       // 5 — θ=337.5°
+  'Calmo',         // 6 — θ=157.5°
+  'Contente',      // 7 — θ=112.5°
+  'Surpreso',      // 8 — θ=0°
+  'Entusiasmado',  // 9 — θ=22.5°
+  'Prazer',        // 10 — θ=90°
+  'Satisfeito',    // 11 — θ=135°
+  'Ansioso',       // 12 — θ=292.5°
+  'Aliviado',      // 13 — θ=180°
+  'Entediado',     // 14 — θ=202.5°
+  'Envergonhado',  // 15 — θ=247.5°
 ];

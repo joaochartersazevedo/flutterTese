@@ -18,63 +18,42 @@ class CircumplexEmotion {
   String toString() => label;
 }
 
+/// 16 emotions evenly spaced on the Geneva Emotion Wheel (22.5° each).
+/// Position formula: valence = sin(θ), arousal = cos(θ), θ clockwise from top.
+/// IDs 0-7 kept for backward compat with existing dialogues.
 const List<CircumplexEmotion> emotionWheel = [
-  CircumplexEmotion(
-    id: 0,
-    label: 'Furioso',
-    valence: -0.8,
-    arousal: 0.9,
-    color: '#7FFF00', // 135° - yellow-green (top-left)
-  ),
-  CircumplexEmotion(
-    id: 1,
-    label: 'Nervoso',
-    valence: -0.3,
-    arousal: 0.6,
-    color: '#FFFF00', // 90° - yellow (top-center)
-  ),
-  CircumplexEmotion(
-    id: 2,
-    label: 'Alegre',
-    valence: 0.9,
-    arousal: 0.9,
-    color: '#FF7F00', // 45° - orange (top-right)
-  ),
-  CircumplexEmotion(
-    id: 3,
-    label: 'Triste',
-    valence: -0.7,
-    arousal: -0.4,
-    color: '#00FF00', // 180° - green (left)
-  ),
-  CircumplexEmotion(
-    id: 4,
-    label: 'Animado',
-    valence: 0.7,
-    arousal: 0.7,
-    color: '#FF0000', // 0° - red (right)
-  ),
-  CircumplexEmotion(
-    id: 5,
-    label: 'Enojado',
-    valence: -0.8,
-    arousal: 0.5,
-    color: '#00FFFF', // 225° - cyan (bottom-left)
-  ),
-  CircumplexEmotion(
-    id: 6,
-    label: 'Calmo',
-    valence: 0.7,
-    arousal: -0.8,
-    color: '#0000FF', // 270° - blue (bottom-center)
-  ),
-  CircumplexEmotion(
-    id: 7,
-    label: 'Contente',
-    valence: 0.8,
-    arousal: -0.3,
-    color: '#8B00FF', // 315° - violet (bottom-right)
-  ),
+  // θ=315° — top-left: high arousal, negative valence
+  CircumplexEmotion(id: 0, label: 'Furioso',      valence: -0.71, arousal:  0.71, color: '#DC143C'),
+  // θ=270° — left: negative valence, neutral arousal
+  CircumplexEmotion(id: 1, label: 'Nervoso',      valence: -1.00, arousal:  0.00, color: '#9932CC'),
+  // θ=45°  — top-right: high arousal, positive valence
+  CircumplexEmotion(id: 2, label: 'Alegre',       valence:  0.71, arousal:  0.71, color: '#FFA500'),
+  // θ=225° — bottom-left: low arousal, negative valence
+  CircumplexEmotion(id: 3, label: 'Triste',       valence: -0.71, arousal: -0.71, color: '#4682B4'),
+  // θ=67.5° — right-top: positive valence, medium-high arousal
+  CircumplexEmotion(id: 4, label: 'Animado',      valence:  0.92, arousal:  0.38, color: '#FF6600'),
+  // θ=337.5° — near top, slightly negative valence
+  CircumplexEmotion(id: 5, label: 'Enojado',      valence: -0.38, arousal:  0.92, color: '#8B4513'),
+  // θ=157.5° — bottom-right: low arousal, slightly positive
+  CircumplexEmotion(id: 6, label: 'Calmo',        valence:  0.38, arousal: -0.92, color: '#20B2AA'),
+  // θ=112.5° — right-bottom: positive valence, slight negative arousal
+  CircumplexEmotion(id: 7, label: 'Contente',     valence:  0.92, arousal: -0.38, color: '#32CD32'),
+  // θ=0°   — top: max arousal, neutral valence
+  CircumplexEmotion(id: 8, label: 'Surpreso',     valence:  0.00, arousal:  1.00, color: '#FFE500'),
+  // θ=22.5° — top-right area
+  CircumplexEmotion(id: 9, label: 'Entusiasmado', valence:  0.38, arousal:  0.92, color: '#FFB300'),
+  // θ=90°  — right: max positive valence, neutral arousal
+  CircumplexEmotion(id: 10, label: 'Prazer',      valence:  1.00, arousal:  0.00, color: '#FF69B4'),
+  // θ=135° — bottom-right: positive valence, low arousal
+  CircumplexEmotion(id: 11, label: 'Satisfeito',  valence:  0.71, arousal: -0.71, color: '#90EE90'),
+  // θ=292.5° — left-top: negative valence, medium arousal
+  CircumplexEmotion(id: 12, label: 'Ansioso',     valence: -0.92, arousal:  0.38, color: '#800080'),
+  // θ=180° — bottom: min arousal, neutral valence
+  CircumplexEmotion(id: 13, label: 'Aliviado',    valence:  0.00, arousal: -1.00, color: '#00CED1'),
+  // θ=202.5° — bottom-left: slightly negative, low arousal
+  CircumplexEmotion(id: 14, label: 'Entediado',   valence: -0.38, arousal: -0.92, color: '#778899'),
+  // θ=247.5° — left-bottom: very negative, slight negative arousal
+  CircumplexEmotion(id: 15, label: 'Envergonhado',valence: -0.92, arousal: -0.38, color: '#696969'),
 ];
 
 CircumplexEmotion getEmotion(int id) {

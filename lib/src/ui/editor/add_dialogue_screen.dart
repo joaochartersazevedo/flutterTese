@@ -52,6 +52,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
   late List<int> _selectedCharIds;
   late bool _singleTrigger;
   late bool _selfRemove;
+  late bool _isEnding;
   late int _priority;
   late Map<int, bool> _preconditions;
   late Map<int, bool> _consequences;
@@ -166,6 +167,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     _selectedCharIds = ex != null ? List.of(ex.characterIds) : [];
     _singleTrigger = ex?.singleTrigger ?? false;
     _selfRemove = ex?.selfRemove ?? false;
+    _isEnding = ex?.isEnding ?? false;
     _priority = ex?.priority ?? 0;
     _preconditions = ex != null ? Map.of(ex.preconditions) : {};
     _consequences = ex != null ? Map.of(ex.consequences) : {};
@@ -206,6 +208,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
       consequences: _consequences,
       selfRemove: _selfRemove,
       priority: _priority,
+      isEnding: _isEnding,
     );
     Navigator.pop(context, d);
   }
@@ -294,13 +297,15 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                 selectedCharIds: _selectedCharIds,
                 singleTrigger: _singleTrigger,
                 selfRemove: _selfRemove,
+                isEnding: _isEnding,
                 priority: _priority,
                 preconditions: _preconditions,
                 consequences: _consequences,
-                onChanged: (charIds, st, sr, prio, pre, cons) => setState(() {
+                onChanged: (charIds, st, sr, ending, prio, pre, cons) => setState(() {
                   _selectedCharIds = charIds;
                   _singleTrigger = st;
                   _selfRemove = sr;
+                  _isEnding = ending;
                   _priority = prio;
                   _preconditions = pre;
                   _consequences = cons;
@@ -364,6 +369,7 @@ class _MetaPanel extends StatefulWidget {
     required this.selectedCharIds,
     required this.singleTrigger,
     required this.selfRemove,
+    required this.isEnding,
     required this.priority,
     required this.preconditions,
     required this.consequences,
@@ -376,11 +382,13 @@ class _MetaPanel extends StatefulWidget {
   final List<int> selectedCharIds;
   final bool singleTrigger;
   final bool selfRemove;
+  final bool isEnding;
   final int priority;
   final Map<int, bool> preconditions;
   final Map<int, bool> consequences;
   final void Function(
     List<int>,
+    bool,
     bool,
     bool,
     int,
@@ -395,7 +403,7 @@ class _MetaPanel extends StatefulWidget {
 
 class _MetaPanelState extends State<_MetaPanel> {
   late List<int> _charIds;
-  late bool _st, _sr;
+  late bool _st, _sr, _ending;
   late int _prio;
   late Map<int, bool> _pre, _cons;
 
@@ -405,12 +413,13 @@ class _MetaPanelState extends State<_MetaPanel> {
     _charIds = List.of(widget.selectedCharIds);
     _st = widget.singleTrigger;
     _sr = widget.selfRemove;
+    _ending = widget.isEnding;
     _prio = widget.priority;
     _pre = Map.of(widget.preconditions);
     _cons = Map.of(widget.consequences);
   }
 
-  void _notify() => widget.onChanged(_charIds, _st, _sr, _prio, _pre, _cons);
+  void _notify() => widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons);
 
   @override
   Widget build(BuildContext context) {
@@ -475,6 +484,20 @@ class _MetaPanelState extends State<_MetaPanel> {
           value: _sr,
           onChanged: (v) {
             setState(() => _sr = v);
+            _notify();
+          },
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Diálogo de fim', style: TextStyle(fontSize: 13)),
+          subtitle: const Text(
+            'Termina o jogo ao concluir',
+            style: TextStyle(fontSize: 11),
+          ),
+          value: _ending,
+          onChanged: (v) {
+            setState(() => _ending = v);
             _notify();
           },
         ),
@@ -617,6 +640,7 @@ class _TreeView extends StatefulWidget {
     this.onRemoveSelf,
     this.emotionId,
     this.previousLines = const <String>[],
+    this.rootLockedSpeakerId,
   });
 
   final DialogueNode root;
@@ -626,6 +650,8 @@ class _TreeView extends StatefulWidget {
   final VoidCallback? onRemoveSelf;
   final int? emotionId;
   final List<String> previousLines;
+  /// If set, root NodeCard speaker is locked (no dropdown).
+  final int? rootLockedSpeakerId;
 
   @override
   State<_TreeView> createState() => _TreeViewState();
@@ -699,6 +725,7 @@ class _TreeViewState extends State<_TreeView> {
             previousLines: widget.previousLines,
             onChanged: widget.onChanged,
             onRemoveSelf: widget.onRemoveSelf,
+            lockedSpeakerId: widget.rootLockedSpeakerId,
           ),
 
           // ── Choice branches (side-by-side) ─────────────────────────────
@@ -867,13 +894,35 @@ class _BranchColumn extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
+          // Player line label — first node of every branch is always the player speaking
+          if (branchRoot.isLine && branchRoot.line!.speakerId == 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.person, size: 11, color: Color(0xFF00CC44)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'linha do jogador',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.green.shade400,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           _TreeView(
             root: branchRoot,
             chars: chars,
             flags: flags,
             previousLines: previousLines,
             onChanged: onChanged,
+            rootLockedSpeakerId:
+                (branchRoot.isLine && branchRoot.line!.speakerId == 0) ? 0 : null,
             onRemoveSelf: () {
               parentChoiceNode.children?.remove(emotionId);
               onChanged();
@@ -916,6 +965,8 @@ class _AddBranchBar extends StatelessWidget {
           ),
           label: Text('+ ${e.label}', style: const TextStyle(fontSize: 11)),
           onPressed: () {
+            node.choice ??= DialogueChoice();
+            node.choice!.choices.putIfAbsent(e.id, () => '');
             node.children ??= {};
             node.children![e.id] = DialogueNode(
               line: DialogueLine(speakerId: 0, text: ''),
@@ -944,6 +995,7 @@ class _NodeCard extends StatefulWidget {
     required this.onChanged,
     this.onRemoveSelf,
     this.previousLines = const <String>[],
+    this.lockedSpeakerId,
   });
 
   final DialogueNode node;
@@ -952,6 +1004,8 @@ class _NodeCard extends StatefulWidget {
   final VoidCallback onChanged;
   final VoidCallback? onRemoveSelf;
   final List<String> previousLines;
+  /// When set, speaker is fixed — dropdown hidden, shows read-only label.
+  final int? lockedSpeakerId;
 
   @override
   State<_NodeCard> createState() => _NodeCardState();
@@ -1199,7 +1253,29 @@ class _NodeCardState extends State<_NodeCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (validChars.isNotEmpty)
+        if (widget.lockedSpeakerId != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              children: [
+                const Icon(Icons.lock, size: 12, color: Colors.white38),
+                const SizedBox(width: 6),
+                Text(
+                  validChars
+                          .where((c) => c.id == widget.lockedSpeakerId)
+                          .firstOrNull
+                          ?.name ??
+                      'Jogador',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white54,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else if (validChars.isNotEmpty)
           DropdownButtonFormField<int>(
             value: resolvedId,
             decoration: const InputDecoration(
@@ -1860,58 +1936,46 @@ class _EmotionSelectionGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const cols = 3;
-    final rows = (emotionWheel.length / cols).ceil();
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(rows, (row) {
-        return Row(
-          children: List.generate(cols, (col) {
-            final idx = row * cols + col;
-            if (idx >= emotionWheel.length)
-              return const Expanded(child: SizedBox());
-            final e = emotionWheel[idx];
-            final sel = selected.contains(e.id);
-            return Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(2),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: () => onToggle(e.id),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 6,
-                      horizontal: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: sel
-                          ? _emotionColor(e.id).withOpacity(0.25)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: sel
-                            ? _emotionColor(e.id)
-                            : AppColors.textMuted.withOpacity(0.3),
-                        width: sel ? 1.5 : 1,
-                      ),
-                    ),
-                    child: Text(
-                      e.label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: sel ? _emotionColor(e.id) : AppColors.textMuted,
-                        fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                ),
+    return GridView.count(
+      crossAxisCount: 4,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 4,
+      crossAxisSpacing: 4,
+      childAspectRatio: 3.2,
+      children: emotionWheel.map((e) {
+        final sel = selected.contains(e.id);
+        return InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => onToggle(e.id),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            decoration: BoxDecoration(
+              color: sel
+                  ? _emotionColor(e.id).withOpacity(0.25)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: sel
+                    ? _emotionColor(e.id)
+                    : AppColors.textMuted.withOpacity(0.3),
+                width: sel ? 1.5 : 1,
               ),
-            );
-          }),
+            ),
+            child: Text(
+              e.label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                color: sel ? _emotionColor(e.id) : AppColors.textMuted,
+                fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
         );
-      }),
+      }).toList(),
     );
   }
 }

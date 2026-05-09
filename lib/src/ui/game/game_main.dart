@@ -8,7 +8,6 @@ import '../../models/character.dart';
 import '../../models/connection.dart';
 import '../../models/emotion.dart';
 import '../../models/save_data.dart';
-import '../../models/task.dart';
 import '../app_theme.dart';
 import 'emotion_wheel.dart';
 
@@ -58,8 +57,6 @@ class _GameView extends StatelessWidget {
     final chars = engine.currentCharacters;
     final inDialogue = engine.isInDialogue;
     final currentLine = engine.currentLine;
-    final activeTasks = engine.activeTasks;
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -71,29 +68,27 @@ class _GameView extends StatelessWidget {
           else
             _GradientBg(area: area),
 
-          // Darkening overlay
+          // Character sprites — above background, below HUD/dialogue
+          if (chars.isNotEmpty)
+            Positioned.fill(
+              child: _CharacterSprites(
+                engine: engine,
+                chars: chars,
+                activeSpeakerId: inDialogue ? currentLine?.speakerId : null,
+              ),
+            ),
+
+          // Top vignette for HUD readability
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0x33000000), Color(0xDD000000)],
+                colors: [Color(0xCC000000), Colors.transparent],
+                stops: [0.0, 0.22],
               ),
             ),
           ),
-
-          // Character sprites — only visible when not in dialogue
-          if (chars.isNotEmpty && !inDialogue)
-            Positioned(
-              bottom: 100,
-              left: 0,
-              right: 0,
-              child: _CharacterSprites(
-                engine: engine,
-                chars: chars,
-                activeSpeakerId: null,
-              ),
-            ),
 
           // Area name + clock
           Positioned(
@@ -134,25 +129,11 @@ class _GameView extends StatelessWidget {
             ),
           ),
 
-          // Active tasks panel (top-right, below exit)
-          if (activeTasks.isNotEmpty && !inDialogue)
-            Positioned(
-              top: 52,
-              right: 12,
-              child: _TasksPanel(tasks: activeTasks, engine: engine),
-            ),
-
-          // Navigation bar (bottom, when not in dialogue)
+          // Navigation cards (screen center, only when not in dialogue)
           if (!inDialogue)
-            Positioned(
-              bottom: 16,
-              left: 16,
-              right: 16,
-              child: _NavigationBar(engine: engine),
+            Positioned.fill(
+              child: Center(child: _NavigationBar(engine: engine)),
             ),
-
-          // Dialogue trigger buttons (right side, when not in dialogue)
-          if (!inDialogue) _AreaDialogueButtons(engine: engine),
 
           // Emotion wheel overlay (playerChat, after prologue exhausted)
           if (inDialogue && engine.emotionModeActive)
@@ -170,6 +151,12 @@ class _GameView extends StatelessWidget {
               left: 0,
               right: 0,
               child: _DialogueBox(engine: engine),
+            ),
+
+          // Game over overlay
+          if (engine.isGameOver)
+            Positioned.fill(
+              child: _GameOverOverlay(onExit: _exitGame),
             ),
         ],
       ),
@@ -217,31 +204,37 @@ class _CharacterSprites extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: chars.map((c) {
-        final bodyFile = File(engine.resolveAsset(c.bodyPath));
-        final isSpeaking = activeSpeakerId == null || c.id == activeSpeakerId;
-        return AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: isSpeaking ? 1.0 : 0.35,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: bodyFile.existsSync()
-                ? Image.file(bodyFile, height: 320, fit: BoxFit.contain)
-                : _CharPlaceholder(name: c.name, colorHex: c.colorHex),
-          ),
-        );
-      }).toList(),
+    final screenH = MediaQuery.sizeOf(context).height;
+    final spriteH = screenH * 0.82;
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: chars.map((c) {
+          final bodyFile = File(engine.resolveAsset(c.bodyPath));
+          final isSpeaking = activeSpeakerId == null || c.id == activeSpeakerId;
+          return AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: isSpeaking ? 1.0 : 0.4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: bodyFile.existsSync()
+                  ? Image.file(bodyFile, height: spriteH, fit: BoxFit.contain)
+                  : _CharPlaceholder(name: c.name, colorHex: c.colorHex, height: spriteH * 0.6),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }
 
 class _CharPlaceholder extends StatelessWidget {
-  const _CharPlaceholder({required this.name, required this.colorHex});
+  const _CharPlaceholder({required this.name, required this.colorHex, this.height = 330});
   final String name;
   final String colorHex;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -252,8 +245,8 @@ class _CharPlaceholder extends StatelessWidget {
       col = Colors.grey;
     }
     return Container(
-      width: 80,
-      height: 220,
+      width: 110,
+      height: height,
       decoration: BoxDecoration(
         color: col.withValues(alpha: 0.2),
         border: Border.all(color: col.withValues(alpha: 0.6)),
@@ -276,146 +269,150 @@ class _NavigationBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final conns = engine.currentConnections;
     if (conns.isEmpty) return const SizedBox.shrink();
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 8,
-      runSpacing: 8,
-      children: conns.map((c) => _ConnButton(engine: engine, conn: c)).toList(),
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (engine.hasPendingAreaDialogue)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: GestureDetector(
+              onTap: engine.stayAndChat,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white24, width: 1),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.chat_bubble_outline_rounded, color: Colors.white70, size: 16),
+                    SizedBox(width: 8),
+                    Text(
+                      'Continuar aqui',
+                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: conns.map((c) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: _AreaCard(engine: engine, conn: c),
+          )).toList(),
+        ),
+        const SizedBox(height: 20),
+      ],
     );
   }
 }
 
-class _ConnButton extends StatelessWidget {
-  const _ConnButton({required this.engine, required this.conn});
+class _AreaCard extends StatelessWidget {
+  const _AreaCard({required this.engine, required this.conn});
   final GameEngine engine;
   final Connection conn;
 
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton.tonal(
-      onPressed: conn.locked ? null : () => engine.travelThrough(conn.id),
-      style: FilledButton.styleFrom(
-        backgroundColor: conn.locked
-            ? Colors.white10
-            : AppColors.primary.withValues(alpha: 0.25),
-        foregroundColor: conn.locked ? Colors.white38 : Colors.white,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(conn.locked ? Icons.lock : Icons.arrow_forward, size: 14),
-          const SizedBox(width: 6),
-          Text(engine.connectionLabel(conn)),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------- Dialogue trigger buttons ----------
-
-class _AreaDialogueButtons extends StatelessWidget {
-  const _AreaDialogueButtons({required this.engine});
-  final GameEngine engine;
+  static const double _cardW = 160;
+  static const double _cardH = 280;
 
   @override
   Widget build(BuildContext context) {
-    final dialogues = engine.currentAreaDialogues;
-    if (dialogues.isEmpty) return const SizedBox.shrink();
-    return Positioned(
-      top: 60,
-      right: 12,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: dialogues.map((d) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: FilledButton.icon(
-              onPressed: () => engine.startDialogue(d.id),
-              icon: const Icon(Icons.chat_bubble_outline, size: 15),
-              label: Text(d.name, style: const TextStyle(fontSize: 13)),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary.withValues(alpha: 0.85),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
+    final destId = conn.destinationFor(engine.currentArea.id);
+    final dest = engine.allAreas.where((a) => a.id == destId).firstOrNull;
+    final destName = dest?.name ?? 'Area $destId';
+    final bgPath = dest != null ? engine.areaBackgroundAbsolutePath(dest) : '';
+    final bgFile = bgPath.isNotEmpty ? File(bgPath) : null;
+    final hasThumb = bgFile != null && bgFile.existsSync();
+
+    return GestureDetector(
+      onTap: conn.locked ? null : () => engine.travelThrough(conn.id),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: _cardW,
+        height: _cardH,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: conn.locked ? Colors.white12 : Colors.white38,
+            width: 1.5,
+          ),
+          boxShadow: conn.locked
+              ? null
+              : [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 12, offset: const Offset(0, 4))],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Thumbnail
+            if (hasThumb)
+              Image.file(bgFile, fit: BoxFit.cover)
+            else
+              Container(color: Colors.white.withValues(alpha: 0.07)),
+
+            // Scrim
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: conn.locked ? 0.75 : 0.6),
+                  ],
+                  stops: const [0.4, 1.0],
                 ),
               ),
             ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
 
-// ---------- Tasks panel ----------
+            // Lock icon
+            if (conn.locked)
+              const Positioned(
+                top: 10,
+                right: 10,
+                child: Icon(Icons.lock, color: Colors.white38, size: 16),
+              ),
 
-class _TasksPanel extends StatelessWidget {
-  const _TasksPanel({required this.tasks, required this.engine});
-  final List<Task> tasks;
-  final GameEngine engine;
+            // Arrow
+            if (!conn.locked)
+              Positioned(
+                top: 10,
+                left: 0,
+                right: 0,
+                child: Icon(
+                  Icons.arrow_upward_rounded,
+                  color: Colors.white.withValues(alpha: 0.6),
+                  size: 18,
+                ),
+              ),
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 220),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.task_alt, size: 13, color: AppColors.accent),
-              SizedBox(width: 6),
-              Text(
-                'Tarefas',
+            // Area name
+            Positioned(
+              bottom: 10,
+              left: 8,
+              right: 8,
+              child: Text(
+                destName,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: AppColors.accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
+                  color: conn.locked ? Colors.white38 : Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                  shadows: const [Shadow(color: Colors.black, blurRadius: 6)],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ...tasks.map(
-            (t) => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 2),
-                    child: Icon(
-                      Icons.radio_button_unchecked,
-                      size: 10,
-                      color: Colors.white54,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      t.name,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -574,7 +571,7 @@ class _EmotionDialogueBox extends StatefulWidget {
 }
 
 class _EmotionDialogueBoxState extends State<_EmotionDialogueBox> {
-  int? _selectedEmotionId;
+  int? _hoveredEmotionId;
 
   @override
   Widget build(BuildContext context) {
@@ -587,78 +584,14 @@ class _EmotionDialogueBoxState extends State<_EmotionDialogueBox> {
       orElse: () => 0,
     );
     final playerName = widget.engine.speakerName(playerId);
-    final activeIds = choiceNode.choices.keys
-        .where((id) => choiceNode.hasChoice(id))
-        .toSet();
+    final activeIds = widget.engine.availableEmotionIds;
 
-    // Show confirmation after player tapped an emotion
-    if (_selectedEmotionId != null && activeIds.contains(_selectedEmotionId!)) {
-      final emotion = getEmotion(_selectedEmotionId!);
-      final playerLine = choiceNode.choices[_selectedEmotionId!] ?? '';
+    final hoveredEmotion =
+        _hoveredEmotionId != null ? getEmotion(_hoveredEmotionId!) : null;
+    final hoveredLine = _hoveredEmotionId != null
+        ? widget.engine.playerLineForEmotion(_hoveredEmotionId!)
+        : null;
 
-      return Container(
-        decoration: BoxDecoration(
-          color: AppColors.dialogueBg,
-          border: const Border(
-            top: BorderSide(color: AppColors.dialogueBorder, width: 1),
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: '$playerName (${emotion.label}): ',
-                    style: const TextStyle(
-                      color: Color(0xFF00FF00),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  TextSpan(
-                    text: playerLine,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => setState(() => _selectedEmotionId = null),
-                  child: const Text(
-                    'Outra emoção',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () {
-                    widget.engine.selectEmotion(_selectedEmotionId!);
-                    setState(() => _selectedEmotionId = null);
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                  ),
-                  child: const Text(
-                    'Continuar',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Show emotion wheel
     return Container(
       decoration: BoxDecoration(
         color: AppColors.dialogueBg,
@@ -667,42 +600,158 @@ class _EmotionDialogueBoxState extends State<_EmotionDialogueBox> {
         ),
       ),
       padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            '$playerName: Escolhe emoção',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Center(
-            child: EmotionWheel(
-              size: 480,
-              selectedEmotionId: _selectedEmotionId,
-              activeIds: activeIds,
-              onEmotionSelected: (id) {
-                if (activeIds.contains(id)) {
-                  setState(() => _selectedEmotionId = id);
-                }
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: widget.engine.skipDialogue,
-              child: const Text(
-                'Saltar',
-                style: TextStyle(color: Colors.white38, fontSize: 12),
+          // Wheel
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$playerName: Escolhe emoção',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              const SizedBox(height: 16),
+              EmotionWheel(
+                size: 300,
+                hoveredEmotionId: _hoveredEmotionId,
+                activeIds: activeIds,
+                onEmotionHovered: (id) =>
+                    setState(() => _hoveredEmotionId = id),
+                onEmotionSelected: (id) {
+                  if (activeIds.contains(id)) {
+                    widget.engine.selectEmotion(id);
+                    setState(() => _hoveredEmotionId = null);
+                  }
+                },
+              ),
+            ],
+          ),
+
+          const SizedBox(width: 24),
+
+          // Hover preview panel
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 150),
+              child: hoveredEmotion != null
+                  ? _EmotionPreview(
+                      key: ValueKey(_hoveredEmotionId),
+                      playerName: playerName,
+                      emotion: hoveredEmotion,
+                      line: hoveredLine ?? '',
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EmotionPreview extends StatelessWidget {
+  const _EmotionPreview({
+    super.key,
+    required this.playerName,
+    required this.emotion,
+    required this.line,
+  });
+
+  final String playerName;
+  final CircumplexEmotion emotion;
+  final String line;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Color(
+      int.parse('FF${emotion.color.replaceAll('#', '')}', radix: 16),
+    );
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                emotion.label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '$playerName: $line',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------- Game over ----------
+
+class _GameOverOverlay extends StatelessWidget {
+  const _GameOverOverlay({required this.onExit});
+  final Future<void> Function() onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.85),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'FIM',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 64,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 12,
+              ),
+            ),
+            const SizedBox(height: 40),
+            FilledButton(
+              onPressed: onExit,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+              ),
+              child: const Text('Sair', style: TextStyle(fontSize: 16)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -722,13 +771,13 @@ class _Portrait extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasImage = file != null && file!.existsSync();
     return Container(
-      width: 90,
-      height: 110,
+      width: 140,
+      height: 180,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: speakerColor.withValues(alpha: 0.6),
-          width: 1.5,
+          width: 2,
         ),
         color: hasImage ? null : speakerColor.withValues(alpha: 0.12),
       ),
@@ -740,7 +789,7 @@ class _Portrait extends StatelessWidget {
                 speakerName.isNotEmpty ? speakerName[0] : '?',
                 style: TextStyle(
                   color: speakerColor,
-                  fontSize: 32,
+                  fontSize: 48,
                   fontWeight: FontWeight.bold,
                 ),
               ),

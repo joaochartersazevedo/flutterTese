@@ -4,5 +4,4 @@ export '../models/connection.dart';
 export '../models/dialogue.dart';
 export '../models/event.dart';
 export '../models/state_flag.dart';
-export '../models/task.dart';
 export '../models/world_blueprint.dart';

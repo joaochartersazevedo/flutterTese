@@ -8,7 +8,6 @@ import '../models/connection.dart';
 import '../models/dialogue.dart';
 import '../models/event.dart';
 import '../models/state_flag.dart';
-import '../models/task.dart';
 import '../models/world_blueprint.dart';
 
 class BlueprintEditor extends ChangeNotifier {
@@ -31,15 +30,13 @@ class BlueprintEditor extends ChangeNotifier {
   final Map<int, Character> characters = {};
   final Map<int, StateFlag> gamestates = {};
   final Map<int, Dialogue> dialogues = {};
-  final Map<int, Task> tasks = {};
-  final Map<int, Event> events = {};
+final Map<int, Event> events = {};
 
   int _nextAreaId = 1;
   int _nextConnectionId = 1;
   int _nextCharId = 1;
   int _nextStateId = 1;
   int _nextDialogueId = 1;
-  int _nextTaskId = 1;
   int _nextEventId = 1;
 
   int startingAreaId = 1;
@@ -49,7 +46,6 @@ class BlueprintEditor extends ChangeNotifier {
   int nextCharId() => _nextCharId++;
   int nextStateId() => _nextStateId++;
   int nextDialogueId() => _nextDialogueId++;
-  int nextTaskId() => _nextTaskId++;
   int nextEventId() => _nextEventId++;
 
   // ------ Areas ------
@@ -159,18 +155,6 @@ class BlueprintEditor extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ------ Tasks ------
-
-  void addTask(Task t) {
-    tasks[t.id] = t;
-    notifyListeners();
-  }
-
-  void removeTask(int id) {
-    tasks.remove(id);
-    notifyListeners();
-  }
-
   // ------ Events ------
 
   void addEvent(Event e) {
@@ -193,7 +177,6 @@ class BlueprintEditor extends ChangeNotifier {
         characters: Map.from(characters),
         gamestates: Map.from(gamestates),
         dialogues: Map.from(dialogues),
-        tasks: Map.from(tasks),
         events: Map.from(events),
       );
 
@@ -213,9 +196,6 @@ class BlueprintEditor extends ChangeNotifier {
     dialogues
       ..clear()
       ..addAll(bp.dialogues);
-    tasks
-      ..clear()
-      ..addAll(bp.tasks);
     events
       ..clear()
       ..addAll(bp.events);
@@ -229,7 +209,6 @@ class BlueprintEditor extends ChangeNotifier {
     _nextCharId = maxId(characters.keys) + 1;
     _nextStateId = maxId(gamestates.keys) + 1;
     _nextDialogueId = maxId(dialogues.keys) + 1;
-    _nextTaskId = maxId(tasks.keys) + 1;
     _nextEventId = maxId(events.keys) + 1;
 
     _ensurePlayer();

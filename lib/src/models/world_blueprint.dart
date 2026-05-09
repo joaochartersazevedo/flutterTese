@@ -4,7 +4,6 @@ import 'connection.dart';
 import 'dialogue.dart';
 import 'event.dart';
 import 'state_flag.dart';
-import 'task.dart';
 
 class WorldBlueprint {
   const WorldBlueprint({
@@ -14,7 +13,6 @@ class WorldBlueprint {
     required this.characters,
     required this.gamestates,
     required this.dialogues,
-    required this.tasks,
     required this.events,
   });
 
@@ -24,6 +22,5 @@ class WorldBlueprint {
   final Map<int, Character> characters;
   final Map<int, StateFlag> gamestates;
   final Map<int, Dialogue> dialogues;
-  final Map<int, Task> tasks;
   final Map<int, Event> events;
 }

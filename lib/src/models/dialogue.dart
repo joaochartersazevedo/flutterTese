@@ -70,6 +70,7 @@ class Dialogue {
     this.priority = 0,
     this.areaId,
     this.topic,
+    this.isEnding = false,
   });
 
   final int id;
@@ -85,4 +86,5 @@ class Dialogue {
   final int priority;
   final int? areaId;
   final String? topic;
+  final bool isEnding;
 }

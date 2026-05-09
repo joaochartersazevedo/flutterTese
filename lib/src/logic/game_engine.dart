@@ -9,7 +9,6 @@ import '../models/dialogue.dart';
 import '../models/event.dart';
 import '../models/save_data.dart';
 import '../models/state_flag.dart';
-import '../models/task.dart';
 import '../models/world_blueprint.dart';
 
 class GameEngine extends ChangeNotifier {
@@ -27,7 +26,6 @@ class GameEngine extends ChangeNotifier {
   late List<StateFlag> _gamestates;
   late List<Dialogue> _dialoguesPool;
   late List<Dialogue> _activeDialogues;
-  late List<Task> _tasks;
   late List<Event> _events;
 
   int _currentAreaId = 1;
@@ -39,6 +37,7 @@ class GameEngine extends ChangeNotifier {
   DialogueNode? _currentNode;
   int _stepCount = 0;
   int _totalSteps = 0;
+  bool _gameOver = false;
 
   /// Conversation history for emotion choices (last 4 exchanges).
   final List<(int emotionId, String playerLine)> _conversationHistory = [];
@@ -67,8 +66,6 @@ class GameEngine extends ChangeNotifier {
   Connection? _conn(int id) => _find(_connections, (c) => c.id == id);
   Character? _char(int id) => _find(_characters, (c) => c.id == id);
   StateFlag? _state(int id) => _find(_gamestates, (s) => s.id == id);
-  Task? _task(int id) => _find(_tasks, (t) => t.id == id);
-
   // ---------- GETTERS ----------
 
   RenpyAssetResolver get assetResolver => _assetResolver;
@@ -83,7 +80,6 @@ class GameEngine extends ChangeNotifier {
   List<Area> get allAreas => [..._areas]..sort((a, b) => a.id.compareTo(b.id));
   List<StateFlag> get gameStates =>
       [..._gamestates]..sort((a, b) => a.id.compareTo(b.id));
-  List<Task> get tasks => [..._tasks]..sort((a, b) => a.id.compareTo(b.id));
   List<Dialogue> get activeDialogues =>
       [..._activeDialogues]..sort((a, b) => b.priority.compareTo(a.priority));
 
@@ -101,6 +97,7 @@ class GameEngine extends ChangeNotifier {
           .toList()
         ..sort((a, b) => b.priority.compareTo(a.priority));
 
+  bool get isGameOver => _gameOver;
   bool get isInDialogue => _currentDialogue != null;
   Dialogue? get currentDialogue => _currentDialogue;
 
@@ -115,6 +112,22 @@ class GameEngine extends ChangeNotifier {
 
   /// Current choice node when [emotionModeActive] is true.
   DialogueChoice? get currentChoiceNode => _currentNode?.choice;
+
+  /// Emotion IDs that have branch children on the current choice node.
+  Set<int> get availableEmotionIds =>
+      _currentNode?.children?.keys.toSet() ?? {};
+
+  /// Player line text for an emotion: reads choices map first (AI-generated),
+  /// falls back to branch root line if it is a player node (editor-created).
+  String playerLineForEmotion(int emotionId) {
+    final fromChoices = _currentNode?.choice?.choices[emotionId];
+    if (fromChoices != null && fromChoices.isNotEmpty) return fromChoices;
+    final root = _currentNode?.children?[emotionId];
+    if (root?.isLine == true && root!.line!.speakerId == 0) {
+      return root.line!.text;
+    }
+    return '';
+  }
 
   /// Last exchanges for AI context. (emotionId, playerLine).
   List<(int, String)> get conversationHistory =>
@@ -160,10 +173,6 @@ class GameEngine extends ChangeNotifier {
     return '';
   }
 
-  List<Task> get activeTasks =>
-      _tasks.where((t) => t.active && !t.completed).toList()
-        ..sort((a, b) => a.id.compareTo(b.id));
-
   String areaBackgroundAbsolutePath(Area area) =>
       _assetResolver.resolve(area.backgroundPath);
 
@@ -205,7 +214,7 @@ class GameEngine extends ChangeNotifier {
     _elapsedMinutes += c.travelMinutes;
     _minutesSincePopulate += c.travelMinutes;
     _logLine('Movimento: ${currentArea.name} (+${c.travelMinutes} min).');
-    _tick();
+    _tick(autoStart: true);
   }
 
   void startDialogue(int dialogueId) {
@@ -225,11 +234,10 @@ class GameEngine extends ChangeNotifier {
   void selectEmotion(int emotionId) {
     if (!emotionModeActive || _currentNode == null) return;
     final choiceNode = _currentNode!;
-    final choice = choiceNode.choice!;
 
     _elapsedMinutes += 1;
     _minutesSincePopulate += 1;
-    _conversationHistory.add((emotionId, choice.choices[emotionId] ?? ''));
+    _conversationHistory.add((emotionId, playerLineForEmotion(emotionId)));
     if (_conversationHistory.length > 4) _conversationHistory.removeAt(0);
 
     _currentNode = choiceNode.children?[emotionId] ?? choiceNode.nextNode;
@@ -269,6 +277,11 @@ class GameEngine extends ChangeNotifier {
     _currentDialogue = null;
     _currentNode = null;
     _stepCount = 0;
+    if (d.isEnding) {
+      _gameOver = true;
+      notifyListeners();
+      return;
+    }
     _tick();
   }
 
@@ -280,19 +293,6 @@ class GameEngine extends ChangeNotifier {
       n = n.nextNode;
     }
     return count;
-  }
-
-  void completeTask(int taskId) {
-    final t = _task(taskId);
-    if (t == null || !t.active || t.completed) return;
-    _replace(
-      _tasks,
-      (x) => x.id == taskId,
-      t.copyWith(active: false, completed: true),
-    );
-    _applyConsequences(t.consequences);
-    _logLine('Tarefa concluida: ${t.name}');
-    _tick();
   }
 
   // ---------- RUNTIME ----------
@@ -313,9 +313,6 @@ class GameEngine extends ChangeNotifier {
     _gamestates = blueprint.gamestates.values.map((g) => g.copyWith()).toList();
     _dialoguesPool = blueprint.dialogues.values.toList();
     _activeDialogues = [];
-    _tasks = blueprint.tasks.values
-        .map((t) => t.copyWith(active: false, completed: false))
-        .toList();
     _events = blueprint.events.values.toList();
 
     _currentAreaId = blueprint.startingAreaId;
@@ -324,6 +321,7 @@ class GameEngine extends ChangeNotifier {
     _currentDialogue = null;
     _currentNode = null;
     _stepCount = 0;
+    _gameOver = false;
     _conversationHistory.clear();
 
     _log
@@ -331,14 +329,36 @@ class GameEngine extends ChangeNotifier {
       ..add('Runtime iniciado em ${currentArea.name}.');
 
     _evaluateTriggers();
+    _autoStartDialogue();
   }
 
-  void _tick() {
+  bool get hasPendingAreaDialogue => currentAreaDialogues.isNotEmpty;
+
+  void stayAndChat() {
+    _autoStartDialogue();
+    notifyListeners();
+  }
+
+  void _tick({bool autoStart = false}) {
     _evaluateTriggers();
     if (_minutesSincePopulate >= 60) {
       _minutesSincePopulate = 0;
     }
+    if (autoStart) _autoStartDialogue();
     notifyListeners();
+  }
+
+  void _autoStartDialogue() {
+    if (_currentDialogue != null) return;
+    final pending = currentAreaDialogues;
+    if (pending.isEmpty) return;
+    final d = pending.first; // already sorted by priority desc
+    _currentDialogue = d;
+    _currentNode = d.parentNode;
+    _stepCount = 0;
+    _totalSteps = _countChain(d.parentNode);
+    _conversationHistory.clear();
+    _logLine('Dialogo (auto): ${d.name}');
   }
 
   // ---------- LOGIC ----------
@@ -366,19 +386,6 @@ class GameEngine extends ChangeNotifier {
         }
       }
 
-      for (final t in List<Task>.from(_tasks)) {
-        if (t.completed) continue;
-        final shouldActive = _conditionsMet(t.preconditions);
-        if (t.active != shouldActive) {
-          _replace(
-            _tasks,
-            (x) => x.id == t.id,
-            t.copyWith(active: shouldActive),
-          );
-          if (shouldActive) _logLine('Nova tarefa: ${t.name}.');
-          changed = true;
-        }
-      }
     }
   }
 

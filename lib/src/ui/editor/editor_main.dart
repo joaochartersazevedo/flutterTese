@@ -6,19 +6,16 @@ import '../../data/renpy_asset_resolver.dart';
 import '../../domain/blueprint_editor.dart';
 import '../app_theme.dart';
 import '../../models/area.dart';
-import '../../models/character.dart';
 import '../../models/connection.dart';
 import '../../models/dialogue.dart';
 import '../../models/event.dart';
 import '../../models/state_flag.dart';
-import '../../models/task.dart';
 import 'add_area_screen.dart';
-import 'add_character_screen.dart';
 import 'add_connection_screen.dart';
 import 'add_dialogue_screen.dart';
 import 'add_event_screen.dart';
 import 'add_state_flag_screen.dart';
-import 'add_task_screen.dart';
+import 'character_relationship_screen.dart';
 
 class EditorMain extends StatelessWidget {
   const EditorMain({
@@ -38,7 +35,6 @@ class EditorMain extends StatelessWidget {
     (icon: Icons.person_outline, label: 'Personagens'),
     (icon: Icons.toggle_on_outlined, label: 'Gamestates'),
     (icon: Icons.chat_bubble_outline, label: 'Dialogos'),
-    (icon: Icons.task_alt, label: 'Tarefas'),
     (icon: Icons.bolt_outlined, label: 'Eventos'),
   ];
 
@@ -120,10 +116,9 @@ class EditorMain extends StatelessWidget {
           children: [
             _AreaTab(editor: editor),
             _ConnectionTab(editor: editor),
-            _CharacterTab(editor: editor),
+            CharacterRelationshipScreen(editor: editor),
             _StateFlagTab(editor: editor),
             _DialogueTab(editor: editor),
-            _TaskTab(editor: editor),
             _EventTab(editor: editor),
           ],
         ),
@@ -211,52 +206,6 @@ class _ConnectionTab extends StatelessWidget {
   }
 }
 
-// ---------- Characters ----------
-
-class _CharacterTab extends StatelessWidget {
-  const _CharacterTab({required this.editor});
-  final BlueprintEditor editor;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = editor.characters.values.toList()
-      ..sort((a, b) => a.id.compareTo(b.id));
-    return _ImageGrid<Character>(
-      items: items,
-      onAdd: () async {
-        final result = await Navigator.push<Character>(
-          context,
-          MaterialPageRoute(builder: (_) => AddCharacterScreen(editor: editor)),
-        );
-        if (result != null) editor.addCharacter(result);
-      },
-      cardBuilder: (context, char) => _CharacterCard(
-        character: char,
-        areaName: char.id == BlueprintEditor.playerId
-            ? 'Jogador'
-            : (editor.areas[char.areaId]?.name ?? 'Area ${char.areaId}'),
-        onEdit: () async {
-          final result = await Navigator.push<Character>(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  AddCharacterScreen(editor: editor, existing: char),
-            ),
-          );
-          if (result != null) editor.updateCharacter(result);
-        },
-        onDelete: char.id == BlueprintEditor.playerId
-            ? null
-            : () => _confirmDelete(
-                context,
-                char.name,
-                () => editor.removeCharacter(char.id),
-              ),
-      ),
-    );
-  }
-}
-
 // ---------- State Flags ----------
 
 class _StateFlagTab extends StatelessWidget {
@@ -327,32 +276,6 @@ class _DialogueTab extends StatelessWidget {
         if (result != null) editor.updateDialogue(result);
       },
       onDelete: (d) => editor.removeDialogue(d.id),
-    );
-  }
-}
-
-// ---------- Tasks ----------
-
-class _TaskTab extends StatelessWidget {
-  const _TaskTab({required this.editor});
-  final BlueprintEditor editor;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = editor.tasks.values.toList()
-      ..sort((a, b) => a.id.compareTo(b.id));
-    return _EntityList<Task>(
-      items: items,
-      label: (t) => t.name,
-      subtitle: (t) => 'area: ${editor.areas[t.areaId]?.name ?? t.areaId}',
-      onAdd: () async {
-        final result = await Navigator.push<Task>(
-          context,
-          MaterialPageRoute(builder: (_) => AddTaskScreen(editor: editor)),
-        );
-        if (result != null) editor.addTask(result);
-      },
-      onDelete: (t) => editor.removeTask(t.id),
     );
   }
 }
@@ -584,135 +507,6 @@ class _AreaCard extends StatelessWidget {
   }
 }
 
-// ---------- Character card ----------
-
-class _CharacterCard extends StatelessWidget {
-  const _CharacterCard({
-    required this.character,
-    required this.areaName,
-    required this.onEdit,
-    this.onDelete,
-  });
-
-  final Character character;
-  final String areaName;
-  final VoidCallback onEdit;
-  final VoidCallback? onDelete;
-
-  static final _resolver = RenpyAssetResolver.auto();
-
-  @override
-  Widget build(BuildContext context) {
-    final absPath = _resolver.resolve(character.portraitPath);
-    final portraitFile = character.portraitPath.isNotEmpty
-        ? File(absPath)
-        : null;
-    final hasPortrait = portraitFile != null && portraitFile.existsSync();
-    final charColor = _hexColor(character.colorHex);
-
-    return SizedBox(
-      width: 160,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Portrait — 1:1 square
-            AspectRatio(
-              aspectRatio: 1,
-              child: hasPortrait
-                  ? Image.file(portraitFile, fit: BoxFit.cover)
-                  : Container(
-                      color: charColor.withValues(alpha: 0.15),
-                      child: Center(
-                        child: Text(
-                          character.name.isNotEmpty ? character.name[0] : '?',
-                          style: TextStyle(
-                            color: charColor,
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-            ),
-            // Color accent bar
-            Container(height: 3, color: charColor),
-            // Info
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    character.name,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: charColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          areaName,
-                          style: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 11,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined, size: 15),
-                        color: AppColors.textSecondary,
-                        onPressed: onEdit,
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Editar',
-                      ),
-                      if (onDelete != null)
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 15),
-                          color: AppColors.error,
-                          onPressed: onDelete,
-                          visualDensity: VisualDensity.compact,
-                          tooltip: 'Eliminar',
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ---------- Generic list widget ----------
 
 class _EntityList<T> extends StatelessWidget {
@@ -884,11 +678,3 @@ class _EntityCard extends StatelessWidget {
   }
 }
 
-Color _hexColor(String hex) {
-  try {
-    final cleaned = hex.replaceAll('#', '');
-    return Color(int.parse('FF$cleaned', radix: 16));
-  } catch (_) {
-    return Colors.grey;
-  }
-}
