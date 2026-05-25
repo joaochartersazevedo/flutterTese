@@ -35,7 +35,7 @@ class GameMain extends StatelessWidget {
 
 // ---------- Main view ----------
 
-class _GameView extends StatelessWidget {
+class _GameView extends StatefulWidget {
   const _GameView({
     required this.engine,
     this.currentSave,
@@ -46,12 +46,20 @@ class _GameView extends StatelessWidget {
   final SaveData? currentSave;
   final Future<void> Function() onExit;
 
+  @override
+  State<_GameView> createState() => _GameViewState();
+}
+
+class _GameViewState extends State<_GameView> {
+  bool _showDebug = false;
+
   Future<void> _exitGame() async {
-    await onExit();
+    await widget.onExit();
   }
 
   @override
   Widget build(BuildContext context) {
+    final engine = widget.engine;
     final area = engine.currentArea;
     final bgFile = File(engine.areaBackgroundAbsolutePath(area));
     final chars = engine.currentCharacters;
@@ -118,21 +126,42 @@ class _GameView extends StatelessWidget {
             ),
           ),
 
-          // Exit button
+          // Debug panel
+          if (_showDebug)
+            Positioned(
+              top: 50,
+              left: 8,
+              child: _DebugPanel(engine: engine),
+            ),
+
+          // Exit + debug toggle buttons
           Positioned(
             top: 8,
             right: 8,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white70),
-              onPressed: _exitGame,
-              tooltip: 'Sair',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.bug_report_outlined,
+                    color: _showDebug ? Colors.greenAccent : Colors.white38,
+                  ),
+                  tooltip: 'Debug tags',
+                  onPressed: () => setState(() => _showDebug = !_showDebug),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                  onPressed: _exitGame,
+                  tooltip: 'Sair',
+                ),
+              ],
             ),
           ),
 
-          // Navigation cards (screen center, only when not in dialogue)
+          // Navigation (spatial hotspots or card fallback, only when not in dialogue)
           if (!inDialogue)
             Positioned.fill(
-              child: Center(child: _NavigationBar(engine: engine)),
+              child: _NavigationLayer(engine: engine),
             ),
 
           // Emotion wheel overlay (playerChat, after prologue exhausted)
@@ -259,10 +288,10 @@ class _CharPlaceholder extends StatelessWidget {
   }
 }
 
-// ---------- Navigation ----------
+// ---------- Navigation layer (spatial hotspots + fallback cards) ----------
 
-class _NavigationBar extends StatelessWidget {
-  const _NavigationBar({required this.engine});
+class _NavigationLayer extends StatelessWidget {
+  const _NavigationLayer({required this.engine});
   final GameEngine engine;
 
   @override
@@ -270,48 +299,258 @@ class _NavigationBar extends StatelessWidget {
     final conns = engine.currentConnections;
     if (conns.isEmpty) return const SizedBox.shrink();
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    final currentAreaId = engine.currentArea.id;
+    final spatial = conns.where((c) => c.hotspotForArea(currentAreaId) != null).toList();
+    final cardFallback = conns.where((c) => c.hotspotForArea(currentAreaId) == null).toList();
+
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        if (engine.hasPendingAreaDialogue)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: GestureDetector(
-              onTap: engine.stayAndChat,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.white24, width: 1),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.chat_bubble_outline_rounded, color: Colors.white70, size: 16),
-                    SizedBox(width: 8),
-                    Text(
-                      'Continuar aqui',
-                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+        // Spatial hotspots
+        for (final conn in spatial)
+          _SpatialHotspot(engine: engine, conn: conn, currentAreaId: currentAreaId),
+
+        // "Stay and chat" button + fallback cards at bottom
+        if (engine.hasPendingAreaDialogue || cardFallback.isNotEmpty)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (engine.hasPendingAreaDialogue)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: GestureDetector(
+                      onTap: engine.stayAndChat,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white24, width: 1),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.chat_bubble_outline_rounded,
+                                color: Colors.white70, size: 16),
+                            SizedBox(width: 8),
+                            Text(
+                              'Continuar aqui',
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                if (cardFallback.isNotEmpty)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: cardFallback
+                        .map((c) => Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              child:
+                                  _AreaCard(engine: engine, conn: c),
+                            ))
+                        .toList(),
+                  ),
+                const SizedBox(height: 20),
+              ],
             ),
           ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: conns.map((c) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: _AreaCard(engine: engine, conn: c),
-          )).toList(),
-        ),
-        const SizedBox(height: 20),
       ],
     );
   }
 }
+
+// ---------- Spatial hotspot ----------
+
+class _SpatialHotspot extends StatefulWidget {
+  const _SpatialHotspot({
+    required this.engine,
+    required this.conn,
+    required this.currentAreaId,
+  });
+  final GameEngine engine;
+  final Connection conn;
+  final int currentAreaId;
+
+  @override
+  State<_SpatialHotspot> createState() => _SpatialHotspotState();
+}
+
+class _SpatialHotspotState extends State<_SpatialHotspot>
+    with SingleTickerProviderStateMixin {
+  bool _hovered = false;
+  late AnimationController _pulse;
+  late Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1400))
+      ..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final conn = widget.conn;
+    final hot = conn.hotspotForArea(widget.currentAreaId)!;
+    final destId = conn.destinationFor(widget.currentAreaId);
+    final dest = widget.engine.allAreas
+        .where((a) => a.id == destId)
+        .firstOrNull;
+    final label = conn.label.isNotEmpty
+        ? conn.label
+        : (dest?.name ?? 'Area $destId');
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final h = constraints.maxHeight;
+        final cx = hot.dx * w;
+        final cy = hot.dy * h;
+
+        return AnimatedBuilder(
+          animation: _pulseAnim,
+          builder: (context, _) {
+            final ringSize = 44.0 + _pulseAnim.value * 16;
+            return Stack(
+              children: [
+                // Pulsing ring
+                if (!conn.locked)
+                  Positioned(
+                    left: cx - ringSize / 2,
+                    top: cy - ringSize / 2,
+                    child: IgnorePointer(
+                      child: Container(
+                        width: ringSize,
+                        height: ringSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(
+                                alpha: 0.25 - _pulseAnim.value * 0.2),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Main hotspot button
+                Positioned(
+                  left: cx - 22,
+                  top: cy - 22,
+                  child: MouseRegion(
+                    onEnter: (_) => setState(() => _hovered = true),
+                    onExit: (_) => setState(() => _hovered = false),
+                    child: GestureDetector(
+                      onTap: conn.locked
+                          ? null
+                          : () => widget.engine.travelThrough(conn.id),
+                      child: AnimatedScale(
+                        scale: _hovered ? 1.15 : 1.0,
+                        duration: const Duration(milliseconds: 120),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: conn.locked
+                                ? Colors.black.withValues(alpha: 0.55)
+                                : Colors.black.withValues(alpha: 0.65),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: conn.locked
+                                  ? Colors.white24
+                                  : Colors.white60,
+                              width: 1.5,
+                            ),
+                            boxShadow: conn.locked
+                                ? null
+                                : [
+                                    BoxShadow(
+                                      color: Colors.black
+                                          .withValues(alpha: 0.5),
+                                      blurRadius: 8,
+                                    )
+                                  ],
+                          ),
+                          child: Icon(
+                            conn.locked
+                                ? Icons.lock
+                                : Icons.arrow_forward_rounded,
+                            color: conn.locked
+                                ? Colors.white24
+                                : Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Label tooltip below
+                Positioned(
+                  left: cx - 60,
+                  top: cy + 26,
+                  child: IgnorePointer(
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 120),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: conn.locked
+                              ? Colors.white38
+                              : Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          shadows: const [
+                            Shadow(color: Colors.black, blurRadius: 4)
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ---------- Fallback area card ----------
 
 class _AreaCard extends StatelessWidget {
   const _AreaCard({required this.engine, required this.conn});
@@ -344,19 +583,21 @@ class _AreaCard extends StatelessWidget {
           ),
           boxShadow: conn.locked
               ? null
-              : [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 12, offset: const Offset(0, 4))],
+              : [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4))
+                ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Thumbnail
             if (hasThumb)
               Image.file(bgFile, fit: BoxFit.cover)
             else
               Container(color: Colors.white.withValues(alpha: 0.07)),
-
-            // Scrim
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -364,22 +605,19 @@ class _AreaCard extends StatelessWidget {
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.transparent,
-                    Colors.black.withValues(alpha: conn.locked ? 0.75 : 0.6),
+                    Colors.black
+                        .withValues(alpha: conn.locked ? 0.75 : 0.6),
                   ],
                   stops: const [0.4, 1.0],
                 ),
               ),
             ),
-
-            // Lock icon
             if (conn.locked)
               const Positioned(
                 top: 10,
                 right: 10,
                 child: Icon(Icons.lock, color: Colors.white38, size: 16),
               ),
-
-            // Arrow
             if (!conn.locked)
               Positioned(
                 top: 10,
@@ -391,8 +629,6 @@ class _AreaCard extends StatelessWidget {
                   size: 18,
                 ),
               ),
-
-            // Area name
             Positioned(
               bottom: 10,
               left: 8,
@@ -407,7 +643,9 @@ class _AreaCard extends StatelessWidget {
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   height: 1.3,
-                  shadows: const [Shadow(color: Colors.black, blurRadius: 6)],
+                  shadows: const [
+                    Shadow(color: Colors.black, blurRadius: 6)
+                  ],
                 ),
               ),
             ),
@@ -712,6 +950,83 @@ class _EmotionPreview extends StatelessWidget {
               height: 1.5,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------- Debug panel ----------
+
+class _DebugPanel extends StatelessWidget {
+  const _DebugPanel({required this.engine});
+  final GameEngine engine;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = engine.activeGameStates;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 220, maxHeight: 300),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4)),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'TAGS ATIVAS',
+            style: TextStyle(
+              color: Colors.greenAccent,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (active.isEmpty)
+            const Text(
+              'Nenhuma',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            )
+          else
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: active
+                      .map(
+                        (s) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  color: Colors.greenAccent,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                s.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ),
         ],
       ),
     );

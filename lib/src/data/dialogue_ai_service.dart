@@ -139,10 +139,15 @@ class DialogueAiService {
       throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
     }
 
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    final content = (data['choices'] as List?)?.firstOrNull;
-    if (content == null) throw Exception('Empty response');
-    return ((content as Map)['message']?['content'] ?? '') as String;
+    try {
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final content = (data['choices'] as List?)?.firstOrNull;
+      if (content == null) throw Exception('Empty choices list');
+      final text = (content as Map)['message']?['content'];
+      return (text as String? ?? '');
+    } catch (e) {
+      throw Exception('Bad API response: $e\nBody: ${resp.body.substring(0, resp.body.length.clamp(0, 200))}');
+    }
   }
 
   /// Suggest text for a single dialogue line.
@@ -201,16 +206,19 @@ class DialogueAiService {
 
     // Extract JSON array from response
     final match = RegExp(r'\[.*\]', dotAll: true).firstMatch(raw);
-    if (match == null) throw Exception('No JSON in response');
-    final list = jsonDecode(match.group(0)!) as List;
-    return list
-        .map(
-          (e) => (
-            speaker: (e as Map)['speaker'] as String? ?? '',
-            text: e['text'] as String? ?? '',
-          ),
-        )
-        .toList();
+    if (match == null) throw Exception('No JSON array in response');
+    try {
+      final list = jsonDecode(match.group(0)!) as List;
+      return list.map((e) {
+        final m = (e as Map?) ?? {};
+        return (
+          speaker: m['speaker'] as String? ?? '',
+          text: m['text'] as String? ?? '',
+        );
+      }).toList();
+    } catch (e) {
+      throw Exception('Failed to parse dialogue JSON: $e');
+    }
   }
 
   /// Generate player lines for each emotion in a playerChat choice node.
@@ -237,8 +245,13 @@ class DialogueAiService {
     final raw = await _call(prompt, maxTokens: emotionIds.length * 40);
 
     final match = RegExp(r'\{.*\}', dotAll: true).firstMatch(raw);
-    if (match == null) throw Exception('No JSON in response');
-    final map = jsonDecode(match.group(0)!) as Map<String, dynamic>;
+    if (match == null) throw Exception('No JSON object in response');
+    final Map<String, dynamic> map;
+    try {
+      map = jsonDecode(match.group(0)!) as Map<String, dynamic>;
+    } catch (e) {
+      throw Exception('Failed to parse player lines JSON: $e');
+    }
 
     final result = <int, String>{};
     for (final id in emotionIds) {

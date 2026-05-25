@@ -1,21 +1,17 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
-import '../../data/renpy_asset_resolver.dart';
 import '../../domain/blueprint_editor.dart';
 import '../app_theme.dart';
-import '../../models/area.dart';
-import '../../models/connection.dart';
+import '../game/settings_screen.dart';
 import '../../models/dialogue.dart';
 import '../../models/event.dart';
 import '../../models/state_flag.dart';
-import 'add_area_screen.dart';
-import 'add_connection_screen.dart';
 import 'add_dialogue_screen.dart';
 import 'add_event_screen.dart';
 import 'add_state_flag_screen.dart';
+import 'area_graph_screen.dart';
 import 'character_relationship_screen.dart';
+import 'dialogue_group_screen.dart';
 
 class EditorMain extends StatelessWidget {
   const EditorMain({
@@ -23,17 +19,21 @@ class EditorMain extends StatelessWidget {
     required this.editor,
     required this.onPlay,
     required this.onPlaySeed,
+    required this.onLoadSeed,
+    this.onBack,
   });
 
   final BlueprintEditor editor;
   final VoidCallback onPlay;
   final VoidCallback onPlaySeed;
+  final VoidCallback onLoadSeed;
+  final VoidCallback? onBack;
 
   static const _tabs = [
     (icon: Icons.map_outlined, label: 'Areas'),
-    (icon: Icons.link, label: 'Conexoes'),
     (icon: Icons.person_outline, label: 'Personagens'),
     (icon: Icons.toggle_on_outlined, label: 'Gamestates'),
+    (icon: Icons.folder_outlined, label: 'Grupos'),
     (icon: Icons.chat_bubble_outline, label: 'Dialogos'),
     (icon: Icons.bolt_outlined, label: 'Eventos'),
   ];
@@ -83,6 +83,23 @@ class EditorMain extends StatelessWidget {
                 .toList(),
           ),
           actions: [
+            if (onBack != null) ...[
+              IconButton(
+                icon: const Icon(Icons.arrow_back_outlined, size: 20),
+                tooltip: 'Mudar save',
+                onPressed: onBack,
+              ),
+              const SizedBox(width: 4),
+            ],
+            IconButton(
+              icon: const Icon(Icons.settings_outlined, size: 20),
+              tooltip: 'Definições',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
+            ),
+            const SizedBox(width: 4),
             OutlinedButton.icon(
               onPressed: onPlaySeed,
               icon: const Icon(Icons.download_outlined, size: 15),
@@ -114,10 +131,10 @@ class EditorMain extends StatelessWidget {
         ),
         body: TabBarView(
           children: [
-            _AreaTab(editor: editor),
-            _ConnectionTab(editor: editor),
+            AreaGraphScreen(editor: editor, onLoadSeed: onLoadSeed),
             CharacterRelationshipScreen(editor: editor),
             _StateFlagTab(editor: editor),
+            DialogueGroupScreen(editor: editor),
             _DialogueTab(editor: editor),
             _EventTab(editor: editor),
           ],
@@ -127,84 +144,6 @@ class EditorMain extends StatelessWidget {
   }
 }
 
-// ---------- Areas ----------
-
-class _AreaTab extends StatelessWidget {
-  const _AreaTab({required this.editor});
-  final BlueprintEditor editor;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = editor.areas.values.toList()
-      ..sort((a, b) => a.id.compareTo(b.id));
-    return _ImageGrid<Area>(
-      items: items,
-      onAdd: () async {
-        final result = await Navigator.push<Area>(
-          context,
-          MaterialPageRoute(builder: (_) => AddAreaScreen(editor: editor)),
-        );
-        if (result != null) editor.addArea(result);
-      },
-      cardBuilder: (context, area) => _AreaCard(
-        area: area,
-        onEdit: () async {
-          final result = await Navigator.push<Area>(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AddAreaScreen(editor: editor, existing: area),
-            ),
-          );
-          if (result != null) editor.updateArea(result);
-        },
-        onDelete: () => _confirmDelete(
-          context,
-          area.name,
-          () => editor.removeArea(area.id),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------- Connections ----------
-
-class _ConnectionTab extends StatelessWidget {
-  const _ConnectionTab({required this.editor});
-  final BlueprintEditor editor;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = editor.connections.values.toList()
-      ..sort((a, b) => a.id.compareTo(b.id));
-    return _EntityList<Connection>(
-      items: items,
-      label: (c) {
-        final a = editor.areas[c.areaA]?.name ?? 'A${c.areaA}';
-        final b = editor.areas[c.areaB]?.name ?? 'A${c.areaB}';
-        return '$a ↔ $b';
-      },
-      subtitle: (c) =>
-          '${c.travelMinutes} min${c.locked ? " · bloqueada" : ""}',
-      onDelete: (c) => editor.removeConnection(c.id),
-      onAdd: () async {
-        if (editor.areas.length < 2) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Precisa de pelo menos 2 areas.')),
-          );
-          return;
-        }
-        final result = await Navigator.push<Connection>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AddConnectionScreen(editor: editor),
-          ),
-        );
-        if (result != null) editor.addConnection(result);
-      },
-    );
-  }
-}
 
 // ---------- State Flags ----------
 
@@ -329,182 +268,6 @@ void _confirmDelete(BuildContext context, String name, VoidCallback onConfirm) {
       ],
     ),
   );
-}
-
-// ---------- Image grid (areas + characters) ----------
-
-class _ImageGrid<T> extends StatelessWidget {
-  const _ImageGrid({
-    required this.items,
-    required this.onAdd,
-    required this.cardBuilder,
-  });
-
-  final List<T> items;
-  final VoidCallback onAdd;
-  final Widget Function(BuildContext, T) cardBuilder;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: FloatingActionButton(
-        onPressed: onAdd,
-        tooltip: 'Adicionar',
-        child: const Icon(Icons.add),
-      ),
-      body: items.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.inbox_outlined,
-                    size: 48,
-                    color: AppColors.textMuted,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Sem entradas',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Clica + para adicionar',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
-                  ),
-                ],
-              ),
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
-              child: Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: items
-                    .map((item) => cardBuilder(context, item))
-                    .toList(),
-              ),
-            ),
-    );
-  }
-}
-
-// ---------- Area card ----------
-
-class _AreaCard extends StatelessWidget {
-  const _AreaCard({
-    required this.area,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final Area area;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  static final _resolver = RenpyAssetResolver.auto();
-
-  @override
-  Widget build(BuildContext context) {
-    final absPath = _resolver.resolve(area.backgroundPath);
-    final bgFile = area.backgroundPath.isNotEmpty ? File(absPath) : null;
-    final hasImage = bgFile != null && bgFile.existsSync();
-
-    return SizedBox(
-      width: 200,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Background image — landscape 16:9
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: hasImage
-                  ? Image.file(bgFile, fit: BoxFit.cover)
-                  : Container(
-                      color: AppColors.surfaceHighlight,
-                      child: const Center(
-                        child: Icon(
-                          Icons.landscape_outlined,
-                          size: 32,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          area.name,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (area.locked)
-                        const Icon(
-                          Icons.lock,
-                          size: 13,
-                          color: AppColors.textMuted,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'ID ${area.id} · ${area.connectionIds.length} conexões',
-                    style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 11,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined, size: 15),
-                        color: AppColors.textSecondary,
-                        onPressed: onEdit,
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Editar',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 15),
-                        color: AppColors.error,
-                        onPressed: onDelete,
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Eliminar',
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ---------- Generic list widget ----------

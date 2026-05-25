@@ -71,6 +71,7 @@ class Dialogue {
     this.areaId,
     this.topic,
     this.isEnding = false,
+    this.groupId,
   });
 
   final int id;
@@ -87,4 +88,5 @@ class Dialogue {
   final int? areaId;
   final String? topic;
   final bool isEnding;
+  final int? groupId;
 }

@@ -2,12 +2,20 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'app_preferences.dart';
+
 class RenpyAssetResolver {
   RenpyAssetResolver._(this.imagesRoot);
 
   final String? imagesRoot;
 
   factory RenpyAssetResolver.auto() {
+    // User-configured root takes priority.
+    final saved = AppPreferences.imagesRoot;
+    if (saved.isNotEmpty && Directory(saved).existsSync()) {
+      return RenpyAssetResolver._(saved);
+    }
+
     final cwd = Directory.current.path;
     final candidates = <String>{
       p.normalize(p.join(cwd, 'Tese', 'game', 'images')),
@@ -25,6 +33,10 @@ class RenpyAssetResolver {
 
     return RenpyAssetResolver._(null);
   }
+
+  /// Create a resolver pointing at [root] directly (used after user picks a folder).
+  factory RenpyAssetResolver.withRoot(String root) =>
+      RenpyAssetResolver._(root.isEmpty ? null : root);
 
   String resolve(String renpyPath) {
     if (renpyPath.isEmpty) {

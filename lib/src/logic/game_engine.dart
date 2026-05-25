@@ -80,10 +80,17 @@ class GameEngine extends ChangeNotifier {
   List<Area> get allAreas => [..._areas]..sort((a, b) => a.id.compareTo(b.id));
   List<StateFlag> get gameStates =>
       [..._gamestates]..sort((a, b) => a.id.compareTo(b.id));
+
+  List<StateFlag> get activeGameStates =>
+      _gamestates.where((s) => s.value).toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
   List<Dialogue> get activeDialogues =>
       [..._activeDialogues]..sort((a, b) => b.priority.compareTo(a.priority));
 
-  Area get currentArea => _area(_currentAreaId)!;
+  Area get currentArea =>
+      _area(_currentAreaId) ??
+      _areas.firstOrNull ??
+      const Area(id: 0, name: '', backgroundPath: '', connectionIds: []);
 
   List<Connection> get currentConnections =>
       currentArea.connectionIds.map(_conn).whereType<Connection>().toList();
@@ -237,16 +244,32 @@ class GameEngine extends ChangeNotifier {
 
     _elapsedMinutes += 1;
     _minutesSincePopulate += 1;
-    _conversationHistory.add((emotionId, playerLineForEmotion(emotionId)));
+    final playerLine = playerLineForEmotion(emotionId);
+    _conversationHistory.add((emotionId, playerLine));
     if (_conversationHistory.length > 4) _conversationHistory.removeAt(0);
 
-    _currentNode = choiceNode.children?[emotionId] ?? choiceNode.nextNode;
-    _stepCount++;
-    if (_currentNode == null) {
-      _applyConsequences(choiceNode.branchConsequences);
-      _closeDialogue();
-    } else {
+    final branchRoot = choiceNode.children?[emotionId] ?? choiceNode.nextNode;
+
+    if (playerLine.isNotEmpty) {
+      // Show player speaking before advancing to branch
+      final synthetic = DialogueNode(
+        line: DialogueLine(speakerId: 0, text: playerLine),
+        branchConsequences:
+            branchRoot == null ? Map.from(choiceNode.branchConsequences) : {},
+      );
+      synthetic.nextNode = branchRoot;
+      _currentNode = synthetic;
+      _stepCount++;
       notifyListeners();
+    } else {
+      _currentNode = branchRoot;
+      _stepCount++;
+      if (_currentNode == null) {
+        _applyConsequences(choiceNode.branchConsequences);
+        _closeDialogue();
+      } else {
+        notifyListeners();
+      }
     }
   }
 
@@ -282,6 +305,30 @@ class GameEngine extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
+    // Group continuation: if this dialogue belonged to a group, immediately
+    // start the next available dialogue in that group instead of returning
+    // to area view.
+    if (d.groupId != null) {
+      _evaluateTriggers();
+      final next = _activeDialogues
+          .where((x) => x.groupId == d.groupId && x.id != d.id)
+          .fold<Dialogue?>(null, (best, x) {
+        if (best == null || x.priority > best.priority) return x;
+        return best;
+      });
+      if (next != null) {
+        _currentDialogue = next;
+        _currentNode = next.parentNode;
+        _stepCount = 0;
+        _totalSteps = _countChain(next.parentNode);
+        _conversationHistory.clear();
+        _logLine('Dialogo (grupo): ${next.name}');
+        notifyListeners();
+        return;
+      }
+    }
+
     _tick();
   }
 

@@ -88,6 +88,7 @@ WorldBlueprint buildSeedWorld() {
     gamestates: gamestates,
     dialogues: dialogues,
     events: {},
+    groups: {},
   );
 }
 

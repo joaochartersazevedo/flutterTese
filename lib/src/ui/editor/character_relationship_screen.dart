@@ -28,9 +28,11 @@ Color _colorForRelationship(String label) {
 }
 
 Color _hexToColor(String hex) {
-  final s = hex.replaceAll('#', '');
-  if (s.length == 6) return Color(int.parse('FF$s', radix: 16));
-  if (s.length == 8) return Color(int.parse(s, radix: 16));
+  try {
+    final s = hex.replaceAll('#', '');
+    if (s.length == 6) return Color(int.parse('FF$s', radix: 16));
+    if (s.length == 8) return Color(int.parse(s, radix: 16));
+  } catch (_) {}
   return AppColors.primary;
 }
 

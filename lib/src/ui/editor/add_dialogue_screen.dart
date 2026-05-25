@@ -4,6 +4,7 @@ import '../../data/dialogue_ai_service.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/character.dart';
 import '../../models/dialogue.dart';
+import '../../models/dialogue_group.dart';
 import '../../models/emotion.dart';
 import '../../models/state_flag.dart';
 import '../app_theme.dart';
@@ -56,9 +57,11 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
   late int _priority;
   late Map<int, bool> _preconditions;
   late Map<int, bool> _consequences;
+  int? _groupId;
 
   // ── tree ──────────────────────────────────────────────────────────────────
   late DialogueNode _root;
+  int _activeSpeakerId = 0;
 
   bool _generating = false;
   String _genStatus = '';
@@ -171,6 +174,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     _priority = ex?.priority ?? 0;
     _preconditions = ex != null ? Map.of(ex.preconditions) : {};
     _consequences = ex != null ? Map.of(ex.consequences) : {};
+    _groupId = ex?.groupId;
     _root =
         ex?.parentNode ??
         DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
@@ -209,6 +213,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
       selfRemove: _selfRemove,
       priority: _priority,
       isEnding: _isEnding,
+      groupId: _groupId,
     );
     Navigator.pop(context, d);
   }
@@ -294,6 +299,8 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                 nameCtrl: _nameCtrl,
                 chars: _chars,
                 flags: _flags,
+                groups: widget.editor.groups.values.toList()
+                  ..sort((a, b) => a.id.compareTo(b.id)),
                 selectedCharIds: _selectedCharIds,
                 singleTrigger: _singleTrigger,
                 selfRemove: _selfRemove,
@@ -301,7 +308,10 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                 priority: _priority,
                 preconditions: _preconditions,
                 consequences: _consequences,
-                onChanged: (charIds, st, sr, ending, prio, pre, cons) => setState(() {
+                groupId: _groupId,
+                activeSpeakerId: _activeSpeakerId,
+                onChanged: (charIds, st, sr, ending, prio, pre, cons, gId) =>
+                    setState(() {
                   _selectedCharIds = charIds;
                   _singleTrigger = st;
                   _selfRemove = sr;
@@ -309,7 +319,10 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                   _priority = prio;
                   _preconditions = pre;
                   _consequences = cons;
+                  _groupId = gId;
                 }),
+                onActiveSpeakerChanged: (id) =>
+                    setState(() => _activeSpeakerId = id),
               ),
             ),
           ),
@@ -343,6 +356,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                         root: _root,
                         chars: _chars,
                         flags: _flags,
+                        activeSpeakerId: _activeSpeakerId,
                         onChanged: _refresh,
                       ),
                     ),
@@ -366,6 +380,7 @@ class _MetaPanel extends StatefulWidget {
     required this.nameCtrl,
     required this.chars,
     required this.flags,
+    required this.groups,
     required this.selectedCharIds,
     required this.singleTrigger,
     required this.selfRemove,
@@ -373,12 +388,16 @@ class _MetaPanel extends StatefulWidget {
     required this.priority,
     required this.preconditions,
     required this.consequences,
+    required this.groupId,
+    required this.activeSpeakerId,
     required this.onChanged,
+    required this.onActiveSpeakerChanged,
   });
 
   final TextEditingController nameCtrl;
   final List<Character> chars;
   final List<StateFlag> flags;
+  final List<DialogueGroup> groups;
   final List<int> selectedCharIds;
   final bool singleTrigger;
   final bool selfRemove;
@@ -386,6 +405,8 @@ class _MetaPanel extends StatefulWidget {
   final int priority;
   final Map<int, bool> preconditions;
   final Map<int, bool> consequences;
+  final int? groupId;
+  final int activeSpeakerId;
   final void Function(
     List<int>,
     bool,
@@ -394,8 +415,10 @@ class _MetaPanel extends StatefulWidget {
     int,
     Map<int, bool>,
     Map<int, bool>,
+    int?,
   )
   onChanged;
+  final void Function(int speakerId) onActiveSpeakerChanged;
 
   @override
   State<_MetaPanel> createState() => _MetaPanelState();
@@ -406,6 +429,7 @@ class _MetaPanelState extends State<_MetaPanel> {
   late bool _st, _sr, _ending;
   late int _prio;
   late Map<int, bool> _pre, _cons;
+  int? _groupId;
 
   @override
   void initState() {
@@ -417,9 +441,11 @@ class _MetaPanelState extends State<_MetaPanel> {
     _prio = widget.priority;
     _pre = Map.of(widget.preconditions);
     _cons = Map.of(widget.consequences);
+    _groupId = widget.groupId;
   }
 
-  void _notify() => widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons);
+  void _notify() =>
+      widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons, _groupId);
 
   @override
   Widget build(BuildContext context) {
@@ -462,6 +488,56 @@ class _MetaPanelState extends State<_MetaPanel> {
             }).toList(),
           ),
         const SizedBox(height: 16),
+
+        _sectionLabel('Narrador ativo'),
+        const Text(
+          'Clica para definir o narrador padrão de novas falas.',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: widget.chars.map((c) {
+            final active = widget.activeSpeakerId == c.id;
+            return ChoiceChip(
+              label: Text(c.name, style: const TextStyle(fontSize: 12)),
+              selected: active,
+              onSelected: (_) => widget.onActiveSpeakerChanged(c.id),
+              selectedColor: AppColors.primaryDim,
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
+
+        if (widget.groups.isNotEmpty) ...[
+          _sectionLabel('Grupo'),
+          DropdownButtonFormField<int?>(
+            value: _groupId,
+            decoration: const InputDecoration(
+              hintText: 'Sem grupo',
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+            items: [
+              const DropdownMenuItem<int?>(
+                value: null,
+                child: Text('Sem grupo', style: TextStyle(fontSize: 13)),
+              ),
+              ...widget.groups.map(
+                (g) => DropdownMenuItem<int?>(
+                  value: g.id,
+                  child: Text(g.name, style: const TextStyle(fontSize: 13)),
+                ),
+              ),
+            ],
+            onChanged: (v) {
+              setState(() => _groupId = v);
+              _notify();
+            },
+          ),
+          const SizedBox(height: 16),
+        ],
 
         _sectionLabel('Opções'),
         SwitchListTile(
@@ -641,6 +717,7 @@ class _TreeView extends StatefulWidget {
     this.emotionId,
     this.previousLines = const <String>[],
     this.rootLockedSpeakerId,
+    this.activeSpeakerId = 0,
   });
 
   final DialogueNode root;
@@ -652,6 +729,7 @@ class _TreeView extends StatefulWidget {
   final List<String> previousLines;
   /// If set, root NodeCard speaker is locked (no dropdown).
   final int? rootLockedSpeakerId;
+  final int activeSpeakerId;
 
   @override
   State<_TreeView> createState() => _TreeViewState();
@@ -753,6 +831,7 @@ class _TreeViewState extends State<_TreeView> {
                                 flags: widget.flags,
                                 parentChoiceNode: widget.root,
                                 previousLines: widget.previousLines,
+                                activeSpeakerId: widget.activeSpeakerId,
                                 onChanged: widget.onChanged,
                               ),
                             ),
@@ -784,6 +863,7 @@ class _TreeViewState extends State<_TreeView> {
               root: widget.root.nextNode!,
               chars: widget.chars,
               flags: widget.flags,
+              activeSpeakerId: widget.activeSpeakerId,
               previousLines: [
                 ...widget.previousLines,
                 if (widget.root.line != null) widget.root.line!.text,
@@ -799,7 +879,8 @@ class _TreeViewState extends State<_TreeView> {
             _AddNodeButtons(
               onAddLine: () {
                 widget.root.nextNode = DialogueNode(
-                  line: DialogueLine(speakerId: 0, text: ''),
+                  line: DialogueLine(
+                      speakerId: widget.activeSpeakerId, text: ''),
                 );
                 widget.onChanged();
               },
@@ -828,6 +909,7 @@ class _BranchColumn extends StatelessWidget {
     required this.parentChoiceNode,
     required this.onChanged,
     this.previousLines = const <String>[],
+    this.activeSpeakerId = 0,
   });
 
   final int emotionId;
@@ -837,6 +919,7 @@ class _BranchColumn extends StatelessWidget {
   final DialogueNode parentChoiceNode;
   final VoidCallback onChanged;
   final List<String> previousLines;
+  final int activeSpeakerId;
 
   @override
   Widget build(BuildContext context) {
@@ -919,6 +1002,7 @@ class _BranchColumn extends StatelessWidget {
             root: branchRoot,
             chars: chars,
             flags: flags,
+            activeSpeakerId: activeSpeakerId,
             previousLines: previousLines,
             onChanged: onChanged,
             rootLockedSpeakerId:

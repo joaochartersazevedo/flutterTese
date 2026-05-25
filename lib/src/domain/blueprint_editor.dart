@@ -6,6 +6,7 @@ import '../models/area.dart';
 import '../models/character.dart';
 import '../models/connection.dart';
 import '../models/dialogue.dart';
+import '../models/dialogue_group.dart';
 import '../models/event.dart';
 import '../models/state_flag.dart';
 import '../models/world_blueprint.dart';
@@ -30,7 +31,8 @@ class BlueprintEditor extends ChangeNotifier {
   final Map<int, Character> characters = {};
   final Map<int, StateFlag> gamestates = {};
   final Map<int, Dialogue> dialogues = {};
-final Map<int, Event> events = {};
+  final Map<int, Event> events = {};
+  final Map<int, DialogueGroup> groups = {};
 
   int _nextAreaId = 1;
   int _nextConnectionId = 1;
@@ -38,6 +40,7 @@ final Map<int, Event> events = {};
   int _nextStateId = 1;
   int _nextDialogueId = 1;
   int _nextEventId = 1;
+  int _nextGroupId = 1;
 
   int startingAreaId = 1;
 
@@ -47,6 +50,7 @@ final Map<int, Event> events = {};
   int nextStateId() => _nextStateId++;
   int nextDialogueId() => _nextDialogueId++;
   int nextEventId() => _nextEventId++;
+  int nextGroupId() => _nextGroupId++;
 
   // ------ Areas ------
 
@@ -155,6 +159,42 @@ final Map<int, Event> events = {};
     notifyListeners();
   }
 
+  // ------ Groups ------
+
+  void addGroup(DialogueGroup g) {
+    groups[g.id] = g;
+    notifyListeners();
+  }
+
+  void updateGroup(DialogueGroup g) {
+    groups[g.id] = g;
+    notifyListeners();
+  }
+
+  void removeGroup(int id) {
+    groups.remove(id);
+    // Clear groupId on dialogues that referenced this group
+    for (final entry in dialogues.entries) {
+      if (entry.value.groupId == id) {
+        dialogues[entry.key] = Dialogue(
+          id: entry.value.id,
+          name: entry.value.name,
+          characterIds: entry.value.characterIds,
+          parentNode: entry.value.parentNode,
+          singleTrigger: entry.value.singleTrigger,
+          preconditions: entry.value.preconditions,
+          consequences: entry.value.consequences,
+          selfRemove: entry.value.selfRemove,
+          priority: entry.value.priority,
+          areaId: entry.value.areaId,
+          topic: entry.value.topic,
+          isEnding: entry.value.isEnding,
+        );
+      }
+    }
+    notifyListeners();
+  }
+
   // ------ Events ------
 
   void addEvent(Event e) {
@@ -178,6 +218,7 @@ final Map<int, Event> events = {};
         gamestates: Map.from(gamestates),
         dialogues: Map.from(dialogues),
         events: Map.from(events),
+        groups: Map.from(groups),
       );
 
   void loadBlueprint(WorldBlueprint bp) {
@@ -199,6 +240,9 @@ final Map<int, Event> events = {};
     events
       ..clear()
       ..addAll(bp.events);
+    groups
+      ..clear()
+      ..addAll(bp.groups);
     startingAreaId = bp.startingAreaId;
 
     int maxId(Iterable<int> keys) =>
@@ -210,6 +254,7 @@ final Map<int, Event> events = {};
     _nextStateId = maxId(gamestates.keys) + 1;
     _nextDialogueId = maxId(dialogues.keys) + 1;
     _nextEventId = maxId(events.keys) + 1;
+    _nextGroupId = maxId(groups.keys) + 1;
 
     _ensurePlayer();
 

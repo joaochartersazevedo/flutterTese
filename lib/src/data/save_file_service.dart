@@ -53,9 +53,13 @@ class SaveFileService {
   }
 
   static Future<void> saveSave(SaveData save) async {
-    final dir = await _savesDir;
-    final file = File('${dir.path}/${save.saveName}.json');
-    file.writeAsStringSync(jsonEncode(save.toJson()), flush: true);
+    try {
+      final dir = await _savesDir;
+      final file = File('${dir.path}/${save.saveName}.json');
+      file.writeAsStringSync(jsonEncode(save.toJson()), flush: true);
+    } catch (e) {
+      debugPrint('Error saving "${ save.saveName}": $e');
+    }
   }
 
   static Future<void> deleteSave(String saveName) async {
