@@ -5,7 +5,6 @@ class Connection {
     required this.id,
     required this.areaA,
     required this.areaB,
-    required this.travelMinutes,
     this.locked = false,
     this.label = '',
     this.hotspotAx,
@@ -17,7 +16,6 @@ class Connection {
   final int id;
   final int areaA;
   final int areaB;
-  final int travelMinutes;
   final bool locked;
 
   /// Label shown on the in-game hotspot (e.g. "Stairs", "Exit").
@@ -44,7 +42,6 @@ class Connection {
   int destinationFor(int origin) => origin == areaA ? areaB : areaA;
 
   Connection copyWith({
-    int? travelMinutes,
     bool? locked,
     String? label,
     double? hotspotAx,
@@ -58,7 +55,6 @@ class Connection {
       id: id,
       areaA: areaA,
       areaB: areaB,
-      travelMinutes: travelMinutes ?? this.travelMinutes,
       locked: locked ?? this.locked,
       label: label ?? this.label,
       hotspotAx: clearHotspotA ? null : (hotspotAx ?? this.hotspotAx),

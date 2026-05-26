@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../data/renpy_asset_resolver.dart';
 import '../../domain/blueprint_editor.dart';
@@ -28,10 +27,8 @@ class AreaGraphScreen extends StatefulWidget {
   const AreaGraphScreen({
     super.key,
     required this.editor,
-    this.onLoadSeed,
   });
   final BlueprintEditor editor;
-  final VoidCallback? onLoadSeed;
 
   @override
   State<AreaGraphScreen> createState() => _AreaGraphScreenState();
@@ -267,7 +264,7 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
                   ),
                   Expanded(
                     child: areas.isEmpty
-                        ? _EmptySidebar(onLoadSeed: widget.onLoadSeed, onAdd: _addArea)
+                        ? _EmptySidebar(onAdd: _addArea)
                         : ListView(
                             padding: const EdgeInsets.symmetric(vertical: 6),
                             children: areas.values
@@ -607,8 +604,7 @@ class _AreaEdgePainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
       canvas.drawLine(posA, posB, paint);
 
-      final label =
-          '${conn.travelMinutes} min${conn.locked ? " 🔒" : ""}';
+      final label = conn.locked ? '🔒' : '';
       _drawLabel(canvas, label,
           Offset((posA.dx + posB.dx) / 2, (posA.dy + posB.dy) / 2), color);
     }
@@ -794,7 +790,6 @@ class _ConnectionDialog extends StatefulWidget {
 }
 
 class _ConnectionDialogState extends State<_ConnectionDialog> {
-  late final TextEditingController _minutes;
   late final TextEditingController _label;
   late bool _locked;
   Offset? _hotA; // normalized 0–1
@@ -806,7 +801,6 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   void initState() {
     super.initState();
     final ex = widget.existing;
-    _minutes = TextEditingController(text: ex?.travelMinutes.toString() ?? '5');
     _label = TextEditingController(text: ex?.label ?? '');
     _locked = ex?.locked ?? false;
     if (ex != null) {
@@ -817,19 +811,16 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
 
   @override
   void dispose() {
-    _minutes.dispose();
     _label.dispose();
     super.dispose();
   }
 
   void _submit() {
-    final mins = int.tryParse(_minutes.text.trim()) ?? 5;
     final id = widget.existing?.id ?? widget.nextId();
     widget.onSet(Connection(
       id: id,
       areaA: widget.areaA.id,
       areaB: widget.areaB.id,
-      travelMinutes: mins,
       locked: _locked,
       label: _label.text.trim(),
       hotspotAx: _hotA?.dx,
@@ -850,27 +841,11 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _minutes,
-                      decoration: const InputDecoration(
-                          labelText: 'Tempo de viagem (min)'),
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _label,
-                      decoration: const InputDecoration(
-                          labelText: 'Etiqueta do hotspot',
-                          hintText: 'Ex: Escadas, Porta…'),
-                    ),
-                  ),
-                ],
+              TextFormField(
+                controller: _label,
+                decoration: const InputDecoration(
+                    labelText: 'Etiqueta do hotspot',
+                    hintText: 'Ex: Escadas, Porta…'),
               ),
               SwitchListTile(
                 value: _locked,
@@ -1212,8 +1187,7 @@ class _HotspotPlacer extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _EmptySidebar extends StatelessWidget {
-  const _EmptySidebar({required this.onLoadSeed, required this.onAdd});
-  final VoidCallback? onLoadSeed;
+  const _EmptySidebar({required this.onAdd});
   final VoidCallback onAdd;
 
   @override
@@ -1234,7 +1208,7 @@ class _EmptySidebar extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Cria uma area ou carrega\no mundo de exemplo.',
+            'Cria uma area para começar.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textMuted, fontSize: 11),
           ),
@@ -1253,24 +1227,6 @@ class _EmptySidebar extends StatelessWidget {
               ),
             ),
           ),
-          if (onLoadSeed != null) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: onLoadSeed,
-                icon: const Icon(Icons.download_outlined, size: 14),
-                label: const Text('Carregar exemplo',
-                    style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textSecondary,
-                  side: const BorderSide(color: AppColors.border),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

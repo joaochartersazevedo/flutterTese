@@ -29,10 +29,30 @@ WorldBlueprint buildSeedWorld() {
   };
 
   final connections = <int, Connection>{
-    1: const Connection(id: 1, areaA: 1, areaB: 2, travelMinutes: 3),
-    2: const Connection(id: 2, areaA: 1, areaB: 3, travelMinutes: 2),
-    3: const Connection(id: 3, areaA: 2, areaB: 4, travelMinutes: 4),
-    4: const Connection(id: 4, areaA: 3, areaB: 4, travelMinutes: 5),
+    1: const Connection(
+      id: 1, areaA: 1, areaB: 2,
+      label: 'Sala de Aula',
+      hotspotAx: 0.82, hotspotAy: 0.65,
+      hotspotBx: 0.12, hotspotBy: 0.70,
+    ),
+    2: const Connection(
+      id: 2, areaA: 1, areaB: 3,
+      label: 'Cantina',
+      hotspotAx: 0.50, hotspotAy: 0.85,
+      hotspotBx: 0.50, hotspotBy: 0.15,
+    ),
+    3: const Connection(
+      id: 3, areaA: 2, areaB: 4,
+      label: 'Pátio',
+      hotspotAx: 0.80, hotspotAy: 0.78,
+      hotspotBx: 0.20, hotspotBy: 0.15,
+    ),
+    4: const Connection(
+      id: 4, areaA: 3, areaB: 4,
+      label: 'Pátio',
+      hotspotAx: 0.82, hotspotAy: 0.70,
+      hotspotBx: 0.75, hotspotBy: 0.82,
+    ),
   };
 
   final characters = <int, Character>{
@@ -113,46 +133,50 @@ Dialogue _buildAnaIntro() {
     }),
   );
 
-  final branchTriste = DialogueNode(
+  final anaTriste = DialogueNode(
     line: DialogueLine(
       speakerId: 1,
-      text:
-          'Obrigada... Às vezes parece que ninguém se importa. O facto de estares aqui já ajuda muito.',
+      text: 'Obrigada... Às vezes parece que ninguém se importa. O facto de estares aqui já ajuda muito.',
     ),
     branchConsequences: {1: true},
   );
+  final playerTriste = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Isso deve ser devastador. Sinto muito que estejas a passar por isto.'));
+  playerTriste.nextNode = anaTriste;
 
-  final branchCalmo = DialogueNode(
+  final anaCalmo = DialogueNode(
     line: DialogueLine(
       speakerId: 1,
-      text:
-          'Tens razão. Preciso de pensar com calma em vez de entrar em pânico. Obrigada por estares aqui.',
+      text: 'Tens razão. Preciso de pensar com calma em vez de entrar em pânico. Obrigada por estares aqui.',
     ),
     branchConsequences: {1: true},
   );
+  final playerCalmo = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Respira fundo. Vamos pensar juntos no que fazer.'));
+  playerCalmo.nextNode = anaCalmo;
 
-  final branchFurioso = DialogueNode(
+  final anaFurioso = DialogueNode(
     line: DialogueLine(
       speakerId: 1,
-      text:
-          'Também estou furiosa... mas tenho medo que confrontá-lo diretamente piore tudo. Cuidado.',
+      text: 'Também estou furiosa... mas tenho medo que confrontá-lo diretamente piore tudo. Cuidado.',
     ),
   );
+  final playerFurioso = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Que absurdo! Isso não pode ficar assim!'));
+  playerFurioso.nextNode = anaFurioso;
 
-  final branchNervoso = DialogueNode(
+  final anaNervoso = DialogueNode(
     line: DialogueLine(
       speakerId: 1,
-      text:
-          'Que te preocupes comigo... significa muito. Obrigada por perguntares.',
+      text: 'Que te preocupes comigo... significa muito. Obrigada por perguntares.',
     ),
     branchConsequences: {1: true},
   );
+  final playerNervoso = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Estou preocupado/a contigo. Estás bem?'));
+  playerNervoso.nextNode = anaNervoso;
 
   choice.children = {
-    3: branchTriste,
-    6: branchCalmo,
-    0: branchFurioso,
-    1: branchNervoso,
+    3: playerTriste,
+    6: playerCalmo,
+    0: playerFurioso,
+    1: playerNervoso,
   };
   line1.nextNode = choice;
 
@@ -199,50 +223,39 @@ Dialogue _buildTiagoConfrontation() {
     }),
   );
 
-  // Furioso (0): sets {2: true}
-  final branchFurioso = DialogueNode(
-    line: DialogueLine(
-      speakerId: 2,
-      text:
-          'É só a internet, ninguém leva isso a sério... mas ok, talvez tenha exagerado.',
-    ),
+  final tiagoFurioso = DialogueNode(
+    line: DialogueLine(speakerId: 2, text: 'É só a internet, ninguém leva isso a sério... mas ok, talvez tenha exagerado.'),
     branchConsequences: {2: true},
   );
+  final playerFurioso = DialogueNode(line: DialogueLine(speakerId: 0, text: 'O que fizeste é violência online. Tem consequências reais.'));
+  playerFurioso.nextNode = tiagoFurioso;
 
-  // Calmo (6): sets {2: true, 4: true} — Tiago genuinely reflects
-  final branchCalmo = DialogueNode(
-    line: DialogueLine(
-      speakerId: 2,
-      text:
-          '...Nunca pensei nisso assim. Se fosse comigo... não gostava. Vou apagar e pedir desculpa a ela.',
-    ),
+  final tiagoCalmo = DialogueNode(
+    line: DialogueLine(speakerId: 2, text: '...Nunca pensei nisso assim. Se fosse comigo... não gostava. Vou apagar e pedir desculpa a ela.'),
     branchConsequences: {2: true, 4: true},
   );
+  final playerCalmo = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Coloca-te no lugar dela. Como te sentirias se fosse contigo?'));
+  playerCalmo.nextNode = tiagoCalmo;
 
-  // Triste (3): sets {2: true}
-  final branchTriste = DialogueNode(
-    line: DialogueLine(
-      speakerId: 2,
-      text:
-          'Eu não sabia que ela estava assim tão mal. Podia ter pensado melhor antes de agir.',
-    ),
+  final tiagoTriste = DialogueNode(
+    line: DialogueLine(speakerId: 2, text: 'Eu não sabia que ela estava assim tão mal. Podia ter pensado melhor antes de agir.'),
     branchConsequences: {2: true},
   );
+  final playerTriste = DialogueNode(line: DialogueLine(speakerId: 0, text: 'A Ana está a sofrer muito por causa do que fizeste.'));
+  playerTriste.nextNode = tiagoTriste;
 
-  // Alegre (2): sets {2: true} but Tiago less moved
-  final branchAlegre = DialogueNode(
-    line: DialogueLine(
-      speakerId: 2,
-      text: 'Sim, sim... deixa estar. Não era para ser grande coisa.',
-    ),
+  final tiagoAlegre = DialogueNode(
+    line: DialogueLine(speakerId: 2, text: 'Sim, sim... deixa estar. Não era para ser grande coisa.'),
     branchConsequences: {2: true},
   );
+  final playerAlegre = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Podemos resolver isto sem drama — pede desculpa e apaga.'));
+  playerAlegre.nextNode = tiagoAlegre;
 
   choice.children = {
-    0: branchFurioso,
-    6: branchCalmo,
-    3: branchTriste,
-    2: branchAlegre,
+    0: playerFurioso,
+    6: playerCalmo,
+    3: playerTriste,
+    2: playerAlegre,
   };
 
   line1.nextNode = line2;
@@ -292,47 +305,39 @@ Dialogue _buildSofiaWitness() {
     }),
   );
 
-  final branchCalmo = DialogueNode(
-    line: DialogueLine(
-      speakerId: 3,
-      text:
-          'Tens razão... Não me tinha apercebido que o silêncio também é uma forma de concordar. Vou pensar nisso.',
-    ),
+  final sofiaCalmo = DialogueNode(
+    line: DialogueLine(speakerId: 3, text: 'Tens razão... Não me tinha apercebido que o silêncio também é uma forma de concordar. Vou pensar nisso.'),
     branchConsequences: {3: true},
   );
+  final playerCalmo = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Percebo o teu medo. Mas o silêncio também é uma escolha.'));
+  playerCalmo.nextNode = sofiaCalmo;
 
-  final branchFurioso = DialogueNode(
-    line: DialogueLine(
-      speakerId: 3,
-      text:
-          'É fácil dizer isso... mas está bem. Não consigo ficar de braços cruzados enquanto a Ana sofre.',
-    ),
+  final sofiaFurioso = DialogueNode(
+    line: DialogueLine(speakerId: 3, text: 'É fácil dizer isso... mas está bem. Não consigo ficar de braços cruzados enquanto a Ana sofre.'),
     branchConsequences: {3: true},
   );
+  final playerFurioso = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Tens de falar! Ele não pode continuar a fazer isto.'));
+  playerFurioso.nextNode = sofiaFurioso;
 
-  final branchNervoso = DialogueNode(
-    line: DialogueLine(
-      speakerId: 3,
-      text:
-          'Pois... Juntos é mais fácil. Ok, estou contigo.',
-    ),
+  final sofiaNervoso = DialogueNode(
+    line: DialogueLine(speakerId: 3, text: 'Pois... Juntos é mais fácil. Ok, estou contigo.'),
     branchConsequences: {3: true},
   );
+  final playerNervoso = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Também tenho medo. Mas a Ana precisa de testemunhas.'));
+  playerNervoso.nextNode = sofiaNervoso;
 
-  final branchContente = DialogueNode(
-    line: DialogueLine(
-      speakerId: 3,
-      text:
-          'Se não estiver sozinha... talvez consiga. Obrigada.',
-    ),
+  final sofiaContente = DialogueNode(
+    line: DialogueLine(speakerId: 3, text: 'Se não estiver sozinha... talvez consiga. Obrigada.'),
     branchConsequences: {3: true},
   );
+  final playerContente = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Não precisas de fazer nada sozinha — podemos falar juntos.'));
+  playerContente.nextNode = sofiaContente;
 
   choice.children = {
-    6: branchCalmo,
-    0: branchFurioso,
-    1: branchNervoso,
-    7: branchContente,
+    6: playerCalmo,
+    0: playerFurioso,
+    1: playerNervoso,
+    7: playerContente,
   };
 
   line1.nextNode = line2;
@@ -381,47 +386,39 @@ Dialogue _buildAnaFollowUp() {
     }),
   );
 
-  // All positive branches set {5: true}
-  final branchCalmo = DialogueNode(
-    line: DialogueLine(
-      speakerId: 1,
-      text:
-          'Tenho tudo guardado. Vamos lá juntos amanhã falar com a diretora.',
-    ),
+  final anaCalmo = DialogueNode(
+    line: DialogueLine(speakerId: 1, text: 'Tenho tudo guardado. Vamos lá juntos amanhã falar com a diretora.'),
     branchConsequences: {5: true},
   );
+  final playerCalmo = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Devíamos reportar isto à direção. Tens screenshots das publicações?'));
+  playerCalmo.nextNode = anaCalmo;
 
-  final branchAlegre = DialogueNode(
-    line: DialogueLine(
-      speakerId: 1,
-      text:
-          'Obrigada. Às vezes só precisava de saber que havia alguém do meu lado.',
-    ),
+  final anaAlegre = DialogueNode(
+    line: DialogueLine(speakerId: 1, text: 'Obrigada. Às vezes só precisava de saber que havia alguém do meu lado.'),
     branchConsequences: {5: true},
   );
+  final playerAlegre = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Vais conseguir superar isto. Estou aqui para ti sempre que precisares.'));
+  playerAlegre.nextNode = anaAlegre;
 
-  final branchTriste = DialogueNode(
-    line: DialogueLine(
-      speakerId: 1,
-      text:
-          'Não foi. Mas ouvir isso de alguém que se importa... ajuda a acreditar nisso.',
-    ),
+  final anaTriste = DialogueNode(
+    line: DialogueLine(speakerId: 1, text: 'Não foi. Mas ouvir isso de alguém que se importa... ajuda a acreditar nisso.'),
     branchConsequences: {5: true},
   );
+  final playerTriste = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Lamento muito que isto te tenha acontecido. Não foi nada justo.'));
+  playerTriste.nextNode = anaTriste;
 
-  final branchSatisfeito = DialogueNode(
-    line: DialogueLine(
-      speakerId: 1,
-      text: 'Obrigada. Isso significa muito vindo de ti.',
-    ),
+  final anaSatisfeito = DialogueNode(
+    line: DialogueLine(speakerId: 1, text: 'Obrigada. Isso significa muito vindo de ti.'),
     branchConsequences: {5: true},
   );
+  final playerSatisfeito = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Ver-te a lutar por ti própria... dá-me esperança.'));
+  playerSatisfeito.nextNode = anaSatisfeito;
 
   choice.children = {
-    6: branchCalmo,
-    2: branchAlegre,
-    3: branchTriste,
-    11: branchSatisfeito,
+    6: playerCalmo,
+    2: playerAlegre,
+    3: playerTriste,
+    11: playerSatisfeito,
   };
 
   line1.nextNode = line2;
@@ -471,42 +468,35 @@ Dialogue _buildEnding() {
     }),
   );
 
-  final branchCalmo = DialogueNode(
-    line: DialogueLine(
-      speakerId: 1,
-      text:
-          'Sim. E da próxima vez que vir alguém a sofrer assim, também vou falar. Obrigada por me mostrares que é possível.',
-    ),
+  final anaCalmo = DialogueNode(
+    line: DialogueLine(speakerId: 1, text: 'Sim. E da próxima vez que vir alguém a sofrer assim, também vou falar. Obrigada por me mostrares que é possível.'),
   );
+  final playerCalmo = DialogueNode(line: DialogueLine(speakerId: 0, text: 'O importante é que tomámos as medidas certas juntos.'));
+  playerCalmo.nextNode = anaCalmo;
 
-  final branchContente = DialogueNode(
-    line: DialogueLine(
-      speakerId: 1,
-      text:
-          'Obrigada. Às vezes precisamos de alguém que acredite em nós para conseguirmos acreditar em nós próprios.',
-    ),
+  final anaContente = DialogueNode(
+    line: DialogueLine(speakerId: 1, text: 'Obrigada. Às vezes precisamos de alguém que acredite em nós para conseguirmos acreditar em nós próprios.'),
   );
+  final playerContente = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Estou contente que estejas melhor. Mereces.'));
+  playerContente.nextNode = anaContente;
 
-  final branchSatisfeito = DialogueNode(
-    line: DialogueLine(
-      speakerId: 1,
-      text: 'Talvez. Mas não queria ter passado por isto para isso.',
-    ),
+  final anaSatisfeito = DialogueNode(
+    line: DialogueLine(speakerId: 1, text: 'Talvez. Mas não queria ter passado por isto para isso.'),
   );
+  final playerSatisfeito = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Esta experiência vai tornar-te mais forte.'));
+  playerSatisfeito.nextNode = anaSatisfeito;
 
-  final branchAliviado = DialogueNode(
-    line: DialogueLine(
-      speakerId: 1,
-      text:
-          'Eu também. Muito obrigada. Não me esqueço do que fizeste por mim.',
-    ),
+  final anaAliviado = DialogueNode(
+    line: DialogueLine(speakerId: 1, text: 'Eu também. Muito obrigada. Não me esqueço do que fizeste por mim.'),
   );
+  final playerAliviado = DialogueNode(line: DialogueLine(speakerId: 0, text: 'Finalmente. Que alívio saber que estás mais segura.'));
+  playerAliviado.nextNode = anaAliviado;
 
   choice.children = {
-    6: branchCalmo,
-    7: branchContente,
-    11: branchSatisfeito,
-    13: branchAliviado,
+    6: playerCalmo,
+    7: playerContente,
+    11: playerSatisfeito,
+    13: playerAliviado,
   };
 
   line1.nextNode = line2;

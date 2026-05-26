@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
 import '../../domain/blueprint_editor.dart';
 import '../../models/connection.dart';
 
@@ -16,13 +14,6 @@ class _AddConnectionScreenState extends State<AddConnectionScreen> {
   final _formKey = GlobalKey<FormState>();
   int? _areaA;
   int? _areaB;
-  final _minutes = TextEditingController(text: '5');
-
-  @override
-  void dispose() {
-    _minutes.dispose();
-    super.dispose();
-  }
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
@@ -39,7 +30,6 @@ class _AddConnectionScreenState extends State<AddConnectionScreen> {
         id: id,
         areaA: _areaA!,
         areaB: _areaB!,
-        travelMinutes: int.tryParse(_minutes.text) ?? 5,
       ),
     );
   }
@@ -79,14 +69,6 @@ class _AddConnectionScreenState extends State<AddConnectionScreen> {
                     .toList(),
                 onChanged: (v) => setState(() => _areaB = v),
                 validator: (v) => v == null ? 'Obrigatorio' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _minutes,
-                decoration: const InputDecoration(labelText: 'Tempo de viagem (min) *'),
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                validator: (v) => (v == null || v.isEmpty) ? 'Obrigatorio' : null,
               ),
               const SizedBox(height: 32),
               FilledButton(onPressed: _submit, child: const Text('Criar')),

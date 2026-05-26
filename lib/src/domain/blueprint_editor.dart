@@ -195,6 +195,66 @@ class BlueprintEditor extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Returns an error string if [dialogueId] can't join [groupId], null if ok.
+  String? groupJoinError(int dialogueId, int groupId) {
+    final d = dialogues[dialogueId];
+    final g = groups[groupId];
+    if (d == null || g == null) return null;
+    if (g.orderedDialogueIds.isEmpty) return null;
+    final firstId = g.orderedDialogueIds.first;
+    final first = dialogues[firstId];
+    if (first == null) return null;
+    if (d.areaId != first.areaId) {
+      return 'Diálogo está na área ${d.areaId ?? "?"} mas o grupo usa área ${first.areaId ?? "?"}.';
+    }
+    return null;
+  }
+
+  void setDialogueGroup(int dialogueId, int? groupId) {
+    final d = dialogues[dialogueId];
+    if (d == null) return;
+    final oldGroupId = d.groupId;
+
+    dialogues[dialogueId] = Dialogue(
+      id: d.id,
+      name: d.name,
+      characterIds: d.characterIds,
+      parentNode: d.parentNode,
+      singleTrigger: d.singleTrigger,
+      preconditions: d.preconditions,
+      consequences: d.consequences,
+      selfRemove: d.selfRemove,
+      priority: d.priority,
+      areaId: d.areaId,
+      topic: d.topic,
+      isEnding: d.isEnding,
+      groupId: groupId,
+    );
+
+    // Remove from old group order
+    if (oldGroupId != null && groups.containsKey(oldGroupId)) {
+      final g = groups[oldGroupId]!;
+      final newOrder = [...g.orderedDialogueIds]..remove(dialogueId);
+      groups[oldGroupId] = g.withOrder(newOrder);
+    }
+    // Add to new group order
+    if (groupId != null && groups.containsKey(groupId)) {
+      final g = groups[groupId]!;
+      if (!g.orderedDialogueIds.contains(dialogueId)) {
+        groups[groupId] = g.withOrder([...g.orderedDialogueIds, dialogueId]);
+      }
+    }
+
+    notifyListeners();
+  }
+
+  void reorderGroupDialogues(int groupId, List<int> orderedIds) {
+    final g = groups[groupId];
+    if (g == null) return;
+    groups[groupId] = g.withOrder(orderedIds);
+    notifyListeners();
+  }
+
   // ------ Events ------
 
   void addEvent(Event e) {

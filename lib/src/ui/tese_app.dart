@@ -52,6 +52,26 @@ class _AppShellState extends State<AppShell> {
       DialogueAiService.instance.setApiKey(savedKey);
     }
     _editor = BlueprintEditor();
+    _editor.loadBlueprint(buildSeedWorld());
+    _ensureSeedSaveExists();
+  }
+
+  static const _seedSaveName = 'Mundo Inicial';
+
+  Future<void> _ensureSeedSaveExists() async {
+    if (await SaveFileService.saveExists(_seedSaveName)) return;
+    final seed = buildSeedWorld();
+    final save = SaveData(
+      saveName: _seedSaveName,
+      timestamp: DateTime.now(),
+      currentAreaId: seed.startingAreaId,
+      elapsedMinutes: 0,
+      minutesSincePopulate: 0,
+      log: [],
+      gameFlags: {},
+      characterPositions: {},
+    );
+    await SaveFileService.saveSave(save);
   }
 
   @override
@@ -113,17 +133,6 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  void _launchSeed() {
-    final bp = buildSeedWorld();
-    _editor.loadBlueprint(bp);
-    _launchGame();
-  }
-
-  /// Loads the seed world into the editor without launching the game.
-  void _loadSeedToEditor() {
-    _editor.loadBlueprint(buildSeedWorld());
-  }
-
   // ── Return to editor ──────────────────────────────────────────────────────
 
   Future<void> _returnToEditor() async {
@@ -168,8 +177,6 @@ class _AppShellState extends State<AppShell> {
       builder: (context, _) => EditorMain(
         editor: _editor,
         onPlay: _launchGame,
-        onPlaySeed: _launchSeed,
-        onLoadSeed: _loadSeedToEditor,
         onBack: () => setState(() => _showingSaveSelection = true),
       ),
     );

@@ -185,7 +185,7 @@ class GameEngine extends ChangeNotifier {
 
   String connectionLabel(Connection connection) {
     final dest = connection.destinationFor(_currentAreaId);
-    return '${_area(dest)?.name ?? 'Area $dest'} (${connection.travelMinutes}m)';
+    return _area(dest)?.name ?? 'Area $dest';
   }
 
   // ---------- ACTIONS ----------
@@ -218,9 +218,7 @@ class GameEngine extends ChangeNotifier {
       return;
     }
     _currentAreaId = destId;
-    _elapsedMinutes += c.travelMinutes;
-    _minutesSincePopulate += c.travelMinutes;
-    _logLine('Movimento: ${currentArea.name} (+${c.travelMinutes} min).');
+    _logLine('Movimento: ${currentArea.name}.');
     _tick(autoStart: true);
   }
 
@@ -249,27 +247,13 @@ class GameEngine extends ChangeNotifier {
     if (_conversationHistory.length > 4) _conversationHistory.removeAt(0);
 
     final branchRoot = choiceNode.children?[emotionId] ?? choiceNode.nextNode;
-
-    if (playerLine.isNotEmpty) {
-      // Show player speaking before advancing to branch
-      final synthetic = DialogueNode(
-        line: DialogueLine(speakerId: 0, text: playerLine),
-        branchConsequences:
-            branchRoot == null ? Map.from(choiceNode.branchConsequences) : {},
-      );
-      synthetic.nextNode = branchRoot;
-      _currentNode = synthetic;
-      _stepCount++;
-      notifyListeners();
+    _currentNode = branchRoot;
+    _stepCount++;
+    if (_currentNode == null) {
+      _applyConsequences(choiceNode.branchConsequences);
+      _closeDialogue();
     } else {
-      _currentNode = branchRoot;
-      _stepCount++;
-      if (_currentNode == null) {
-        _applyConsequences(choiceNode.branchConsequences);
-        _closeDialogue();
-      } else {
-        notifyListeners();
-      }
+      notifyListeners();
     }
   }
 
@@ -306,26 +290,27 @@ class GameEngine extends ChangeNotifier {
       return;
     }
 
-    // Group continuation: if this dialogue belonged to a group, immediately
-    // start the next available dialogue in that group instead of returning
-    // to area view.
+    // Group continuation: scan all remaining group slots in order, chain to
+    // the first one whose preconditions are already met (skip unready ones).
     if (d.groupId != null) {
       _evaluateTriggers();
-      final next = _activeDialogues
-          .where((x) => x.groupId == d.groupId && x.id != d.id)
-          .fold<Dialogue?>(null, (best, x) {
-        if (best == null || x.priority > best.priority) return x;
-        return best;
-      });
-      if (next != null) {
-        _currentDialogue = next;
-        _currentNode = next.parentNode;
-        _stepCount = 0;
-        _totalSteps = _countChain(next.parentNode);
-        _conversationHistory.clear();
-        _logLine('Dialogo (grupo): ${next.name}');
-        notifyListeners();
-        return;
+      final group = blueprint.groups[d.groupId];
+      final orderedIds = group?.orderedDialogueIds ?? [];
+      final currentIdx = orderedIds.indexOf(d.id);
+      for (var i = currentIdx + 1; i < orderedIds.length; i++) {
+        final nextId = orderedIds[i];
+        final next = _activeDialogues.where((x) => x.id == nextId).firstOrNull;
+        if (next != null) {
+          _currentDialogue = next;
+          _currentNode = next.parentNode;
+          _stepCount = 0;
+          _totalSteps = _countChain(next.parentNode);
+          _conversationHistory.clear();
+          _logLine('Dialogo (grupo): ${next.name}');
+          notifyListeners();
+          return;
+        }
+        // Preconditions not met — continue scanning further slots.
       }
     }
 
@@ -426,11 +411,19 @@ class GameEngine extends ChangeNotifier {
 
       for (final d in List<Dialogue>.from(_dialoguesPool)) {
         if (_activeDialogues.any((x) => x.id == d.id)) continue;
-        if (_conditionsMet(d.preconditions)) {
-          _activeDialogues.add(d);
-          _logLine('Dialogo ativado: ${d.name}.');
-          changed = true;
+        if (!_conditionsMet(d.preconditions)) continue;
+        // Non-entry group dialogues only activate after entry (index 0) is played.
+        if (d.groupId != null) {
+          final order = blueprint.groups[d.groupId]?.orderedDialogueIds ?? [];
+          final idx = order.indexOf(d.id);
+          if (idx > 0 && order.isNotEmpty) {
+            final entryId = order.first;
+            if (_dialoguesPool.any((x) => x.id == entryId)) continue;
+          }
         }
+        _activeDialogues.add(d);
+        _logLine('Dialogo ativado: ${d.name}.');
+        changed = true;
       }
 
     }

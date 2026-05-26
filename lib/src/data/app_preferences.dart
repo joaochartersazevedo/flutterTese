@@ -38,4 +38,24 @@ class AppPreferences {
     _data['imagesRoot'] = v;
     _persist();
   }
+
+  static bool get ollamaEnabled => (_data['ollamaEnabled'] as bool?) ?? false;
+  static void setOllamaEnabled(bool v) {
+    _data['ollamaEnabled'] = v;
+    _persist();
+  }
+
+  static String get ollamaHost =>
+      (_data['ollamaHost'] as String?) ?? 'http://localhost:11434';
+  static void setOllamaHost(String v) {
+    _data['ollamaHost'] = v;
+    _persist();
+  }
+
+  static String get ollamaModel =>
+      (_data['ollamaModel'] as String?) ?? 'gemma3:4b';
+  static void setOllamaModel(String v) {
+    _data['ollamaModel'] = v;
+    _persist();
+  }
 }

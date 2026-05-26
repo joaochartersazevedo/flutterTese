@@ -8,10 +8,27 @@ import '../../models/dialogue_group.dart';
 import '../../models/emotion.dart';
 import '../../models/state_flag.dart';
 import '../app_theme.dart';
+import '../game/settings_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COLOUR HELPER
 // ─────────────────────────────────────────────────────────────────────────────
+
+void _showError(BuildContext context, String message) {
+  showDialog<void>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Erro AI'),
+      content: SelectableText(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fechar'),
+        ),
+      ],
+    ),
+  );
+}
 
 Color _hex(String hex) {
   try {
@@ -155,9 +172,10 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _genStatus = 'Erro: $e';
+          _genStatus = 'Erro — ver detalhes';
           _generating = false;
         });
+        _showError(context, '$e');
       }
     }
   }
@@ -242,6 +260,14 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                 ),
               ),
             ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, size: 20),
+            tooltip: 'Definições',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
           _AiKeyButton(),
           const SizedBox(width: 4),
           _generating
@@ -804,6 +830,7 @@ class _TreeViewState extends State<_TreeView> {
             onChanged: widget.onChanged,
             onRemoveSelf: widget.onRemoveSelf,
             lockedSpeakerId: widget.rootLockedSpeakerId,
+            emotionId: widget.emotionId,
           ),
 
           // ── Choice branches (side-by-side) ─────────────────────────────
@@ -1080,6 +1107,7 @@ class _NodeCard extends StatefulWidget {
     this.onRemoveSelf,
     this.previousLines = const <String>[],
     this.lockedSpeakerId,
+    this.emotionId,
   });
 
   final DialogueNode node;
@@ -1090,6 +1118,8 @@ class _NodeCard extends StatefulWidget {
   final List<String> previousLines;
   /// When set, speaker is fixed — dropdown hidden, shows read-only label.
   final int? lockedSpeakerId;
+  /// Emotion context for AI line generation (branch emotion).
+  final int? emotionId;
 
   @override
   State<_NodeCard> createState() => _NodeCardState();
@@ -1120,6 +1150,16 @@ class _NodeCardState extends State<_NodeCard> {
 
   Character _speaker() {
     final id = widget.node.line?.speakerId ?? 0;
+    if (id == 0) {
+      return const Character(
+        id: 0,
+        name: 'Jogador',
+        colorHex: '#00cc44',
+        portraitPath: '',
+        areaId: 0,
+        bodyPath: '',
+      );
+    }
     return widget.chars.firstWhere(
       (c) => c.id == id,
       orElse: () => widget.chars.isNotEmpty
@@ -1180,7 +1220,6 @@ class _NodeCardState extends State<_NodeCard> {
         ],
       ),
     );
-    ctxCtrl.dispose();
     if (userCtx == null || !mounted) return;
 
     setState(() => _suggestingLine = true);
@@ -1189,28 +1228,38 @@ class _NodeCardState extends State<_NodeCard> {
       final history = widget.previousLines.isNotEmpty
           ? widget.previousLines.join('\n')
           : _textCtrl.text;
+      final emotionLabel = widget.emotionId != null
+          ? _emotionName(widget.emotionId!)
+          : null;
+      final contextWithEmotion = [
+        if (emotionLabel != null) 'Express the emotion: $emotionLabel.',
+        if (userCtx.isNotEmpty) userCtx,
+        if (userCtx.isEmpty && emotionLabel == null) 'conversa geral',
+      ].join(' ');
       final suggested = await DialogueAiService.instance.suggestLine(
         speakerName: speaker.name,
-        context: userCtx.isEmpty ? 'conversa geral' : userCtx,
+        context: contextWithEmotion,
         previousLine: history,
         speaker: speaker,
         allChars: widget.chars,
       );
-      if (mounted) {
-        setState(() {
-          _textCtrl.text = suggested;
-          widget.node.line ??= DialogueLine(speakerId: 0, text: '');
-          widget.node.line!.text = suggested;
-          _suggestingLine = false;
-        });
-        widget.onChanged();
+      if (!mounted) return;
+      if (suggested.isEmpty) {
+        setState(() => _suggestingLine = false);
+        _showError(context, 'AI devolveu resposta vazia. Verifica a chave e o modelo.');
+        return;
       }
+      setState(() {
+        _textCtrl.text = suggested;
+        widget.node.line ??= DialogueLine(speakerId: 0, text: '');
+        widget.node.line!.text = suggested;
+        _suggestingLine = false;
+      });
+      widget.onChanged();
     } catch (e) {
       if (mounted) {
         setState(() => _suggestingLine = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro AI: $e')));
+        _showError(context, '$e');
       }
     }
   }
@@ -1442,6 +1491,17 @@ class _NodeCardState extends State<_NodeCard> {
                   ),
                 ),
               ),
+              if (_suggestingLine) ...[
+                const SizedBox(width: 6),
+                const Text(
+                  'A pensar…',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1990,17 +2050,23 @@ class _GenerateFullDialogueDialogState
           child: const Text('Cancelar'),
         ),
         FilledButton.icon(
-          onPressed: () => Navigator.pop(
-            context,
-            _GenFullParams(
-              topic: _topicCtrl.text.trim().isEmpty
-                  ? 'conversa'
-                  : _topicCtrl.text.trim(),
-              numLines: _numLines,
-              selectedCharIds: _selCharIds.toList(),
-              selectedEmotionIds: _selEmotionIds.toList(),
-            ),
-          ),
+          onPressed: () {
+            if (_topicCtrl.text.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Escreve um tópico para a conversa.')),
+              );
+              return;
+            }
+            Navigator.pop(
+              context,
+              _GenFullParams(
+                topic: _topicCtrl.text.trim(),
+                numLines: _numLines,
+                selectedCharIds: _selCharIds.toList(),
+                selectedEmotionIds: _selEmotionIds.toList(),
+              ),
+            );
+          },
           icon: const Icon(Icons.auto_awesome, size: 14),
           label: const Text('Gerar'),
         ),

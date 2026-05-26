@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'app_preferences.dart';
 import '../models/character.dart';
 
-
-const _apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
-const _defaultModel = 'openrouter/free';
+const _openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
+const _defaultModel = 'openrouter/owl-alpha';
 
 List<String> _candidateDirs() {
   final cwd = Directory.current.path;
@@ -100,14 +100,36 @@ class DialogueAiService {
 
   void setApiKey(String key) => _apiKeyOverride = key;
 
-  bool get hasApiKey => apiKey.isNotEmpty;
+  bool get hasApiKey =>
+      AppPreferences.ollamaEnabled || apiKey.isNotEmpty;
 
   Future<String> _call(String prompt, {int maxTokens = 200}) async {
-    final key = apiKey;
-    if (key.isEmpty) throw Exception('API key not set');
+    final useOllama = AppPreferences.ollamaEnabled;
+
+    final String url;
+    final Map<String, String> headers;
+    final String model;
+
+    if (useOllama) {
+      final host = AppPreferences.ollamaHost.trimRight().replaceAll(RegExp(r'/$'), '');
+      url = '$host/v1/chat/completions';
+      headers = {'Content-Type': 'application/json'};
+      model = AppPreferences.ollamaModel;
+    } else {
+      final key = apiKey;
+      if (key.isEmpty) throw Exception('API key not set');
+      url = _openRouterUrl;
+      headers = {
+        'Authorization': 'Bearer $key',
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'http://localhost',
+        'X-Title': 'VisualNovelEditor',
+      };
+      model = _defaultModel;
+    }
 
     final body = jsonEncode({
-      'model': _defaultModel,
+      'model': model,
       'messages': [
         {
           'role': 'system',
@@ -122,32 +144,33 @@ class DialogueAiService {
       'temperature': 0.75,
     });
 
-    final resp = await http
-        .post(
-          Uri.parse(_apiUrl),
-          headers: {
-            'Authorization': 'Bearer $key',
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'http://localhost',
-            'X-Title': 'VisualNovelEditor',
-          },
-          body: body,
-        )
-        .timeout(const Duration(seconds: 30));
+    final respFuture = http.post(Uri.parse(url), headers: headers, body: body);
+    final resp = useOllama
+        ? await respFuture
+        : await respFuture.timeout(const Duration(seconds: 30));
 
     if (resp.statusCode != 200) {
       throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
     }
 
+    final Map<String, dynamic> data;
     try {
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final content = (data['choices'] as List?)?.firstOrNull;
-      if (content == null) throw Exception('Empty choices list');
-      final text = (content as Map)['message']?['content'];
-      return (text as String? ?? '');
+      data = jsonDecode(resp.body) as Map<String, dynamic>;
     } catch (e) {
-      throw Exception('Bad API response: $e\nBody: ${resp.body.substring(0, resp.body.length.clamp(0, 200))}');
+      throw Exception('JSON decode failed: $e\nBody: ${resp.body}');
     }
+
+    final choices = data['choices'] as List?;
+    if (choices == null || choices.isEmpty) {
+      throw Exception('No choices in response. Body: ${resp.body}');
+    }
+
+    final text = (choices.first as Map?)?['message']?['content'];
+    if (text == null) {
+      throw Exception('Missing message.content. Choice: ${choices.first}');
+    }
+
+    return (text as String).trim();
   }
 
   /// Suggest text for a single dialogue line.
@@ -159,7 +182,7 @@ class DialogueAiService {
     List<Character> allChars = const [],
   }) async {
     final hist = previousLine.isNotEmpty
-        ? '\nPrevious line: "$previousLine"'
+        ? '\nDialogue so far:\n$previousLine'
         : '';
     final personalityCtx = speaker != null ? _personalityContext(speaker) : '';
     final relCtx = speaker != null ? _relationshipsContext(speaker, allChars) : '';
@@ -170,10 +193,10 @@ class DialogueAiService {
         ? '\nRelationships: $relCtx'
         : '';
     final prompt =
-        'Visual novel character "$speakerName" is speaking.$hist$personalityLine$relLine\n'
+        'Character: $speakerName.$personalityLine$relLine\n'
         'Context: $context\n'
-        'Write ONE short dialogue line (max 2 sentences) for $speakerName. '
-        'Return only the line text, no quotes, no prefix.';
+        '$hist'
+        'Reply with ONLY the spoken line for $speakerName (1-2 sentences, European Portuguese, no quotes, no labels):';
     return (await _call(prompt, maxTokens: 100)).trim();
   }
 
