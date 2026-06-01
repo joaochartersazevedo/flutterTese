@@ -468,6 +468,13 @@ class _DialogueCard extends StatelessWidget {
                           color: const Color(0xFFFB923C),
                           dimColor: const Color(0xFF431407),
                         ),
+                      if (d.topic != null)
+                        _TagBadge(
+                          icon: Icons.label_outline,
+                          label: d.topic!,
+                          color: const Color(0xFF94A3B8),
+                          dimColor: const Color(0xFF1E293B),
+                        ),
                       if (charCount > 0)
                         _TagBadge(
                           icon: Icons.people_outline,

@@ -77,6 +77,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
   late Map<int, bool> _consequences;
   int? _groupId;
   late List<int> _areaIds;
+  String _topic = '';
 
   // ── tree ──────────────────────────────────────────────────────────────────
   late DialogueNode _root;
@@ -98,6 +99,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
       builder: (_) => _GenerateFullDialogueDialog(
         chars: allChars,
         preselectedCharIds: _selectedCharIds,
+        initialTopic: _topic,
       ),
     );
     if (params == null || !mounted) return;
@@ -168,6 +170,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
         _root = allNodes.isNotEmpty
             ? allNodes.first
             : DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
+        _topic = params.topic;
         _genStatus = 'Gerado: ${lines.length} linhas.';
         _generating = false;
       });
@@ -196,6 +199,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     _consequences = ex != null ? Map.of(ex.consequences) : {};
     _groupId = ex?.groupId;
     _areaIds = ex != null ? List.of(ex.areaIds) : [];
+    _topic = ex?.topic ?? '';
     _root =
         ex?.parentNode ??
         DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
@@ -234,6 +238,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
       selfRemove: _selfRemove,
       priority: _priority,
       areaIds: _areaIds,
+      topic: _topic.isEmpty ? null : _topic,
       isEnding: _isEnding,
       groupId: _groupId,
     );
@@ -2243,9 +2248,11 @@ class _GenerateFullDialogueDialog extends StatefulWidget {
   const _GenerateFullDialogueDialog({
     required this.chars,
     required this.preselectedCharIds,
+    this.initialTopic = '',
   });
   final List<Character> chars;
   final List<int> preselectedCharIds;
+  final String initialTopic;
 
   @override
   State<_GenerateFullDialogueDialog> createState() =>
@@ -2254,7 +2261,7 @@ class _GenerateFullDialogueDialog extends StatefulWidget {
 
 class _GenerateFullDialogueDialogState
     extends State<_GenerateFullDialogueDialog> {
-  final _topicCtrl = TextEditingController();
+  late final TextEditingController _topicCtrl;
   int _numLines = 4;
   late Set<int> _selCharIds;
   late Set<int> _selEmotionIds;
@@ -2262,6 +2269,7 @@ class _GenerateFullDialogueDialogState
   @override
   void initState() {
     super.initState();
+    _topicCtrl = TextEditingController(text: widget.initialTopic);
     _selCharIds = widget.preselectedCharIds.isNotEmpty
         ? Set.of(widget.preselectedCharIds)
         : widget.chars.map((c) => c.id).toSet();

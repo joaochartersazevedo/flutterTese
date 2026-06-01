@@ -85,7 +85,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.inactive) {
       _saveWorld();
-      if (_currentSave != null && _engine != null) {
+      // Only save game state if not mid-dialogue (would lose dialogue progress)
+      if (_currentSave != null && _engine != null && !_engine!.isInDialogue) {
         SaveFileService.saveSave(_engine!.saveState(_currentSave!.saveName));
       }
     }

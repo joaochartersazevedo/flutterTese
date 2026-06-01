@@ -52,6 +52,13 @@ class BlueprintEditor extends ChangeNotifier {
   int nextEventId() => _nextEventId++;
   int nextGroupId() => _nextGroupId++;
 
+  void setStartingArea(int id) {
+    if (areas.containsKey(id)) {
+      startingAreaId = id;
+      notifyListeners();
+    }
+  }
+
   // ------ Areas ------
 
   void addArea(Area area) {

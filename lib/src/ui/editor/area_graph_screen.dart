@@ -458,9 +458,10 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
                                       area: a,
                                       resolver: _resolver,
                                       connectionCount: a.connectionIds.length,
+                                      isStarting: widget.editor.startingAreaId == a.id,
                                       onEdit: () => _editArea(a),
-                                      onDelete: () =>
-                                          _deleteArea(context, a),
+                                      onDelete: () => _deleteArea(context, a),
+                                      onSetStarting: () => widget.editor.setStartingArea(a.id),
                                     ))
                                 .toList(),
                           ),
@@ -667,15 +668,19 @@ class _SidebarAreaItem extends StatelessWidget {
     required this.area,
     required this.resolver,
     required this.connectionCount,
+    required this.isStarting,
     required this.onEdit,
     required this.onDelete,
+    required this.onSetStarting,
   });
 
   final Area area;
   final RenpyAssetResolver resolver;
   final int connectionCount;
+  final bool isStarting;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onSetStarting;
 
   @override
   Widget build(BuildContext context) {
@@ -727,13 +732,26 @@ class _SidebarAreaItem extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '$connectionCount conexões${area.locked ? " · bloqueada" : ""}',
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
+                  '${isStarting ? "início · " : ""}$connectionCount conexões${area.locked ? " · bloqueada" : ""}',
+                  style: TextStyle(
+                    color: isStarting ? AppColors.teal : AppColors.textMuted,
                     fontSize: 10,
                   ),
                 ),
               ],
+            ),
+          ),
+          Tooltip(
+            message: isStarting ? 'Área inicial' : 'Definir como inicial',
+            child: IconButton(
+              icon: Icon(
+                isStarting ? Icons.home : Icons.home_outlined,
+                size: 15,
+              ),
+              color: isStarting ? AppColors.teal : AppColors.textMuted,
+              padding: const EdgeInsets.all(6),
+              constraints: const BoxConstraints(),
+              onPressed: isStarting ? null : onSetStarting,
             ),
           ),
           IconButton(
