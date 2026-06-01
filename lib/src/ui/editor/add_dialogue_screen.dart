@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/dialogue_ai_service.dart';
 import '../../domain/blueprint_editor.dart';
+import '../../models/area.dart';
 import '../../models/character.dart';
 import '../../models/dialogue.dart';
 import '../../models/dialogue_group.dart';
@@ -75,6 +76,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
   late Map<int, bool> _preconditions;
   late Map<int, bool> _consequences;
   int? _groupId;
+  int? _areaId;
 
   // ── tree ──────────────────────────────────────────────────────────────────
   late DialogueNode _root;
@@ -193,6 +195,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     _preconditions = ex != null ? Map.of(ex.preconditions) : {};
     _consequences = ex != null ? Map.of(ex.consequences) : {};
     _groupId = ex?.groupId;
+    _areaId = ex?.areaId;
     _root =
         ex?.parentNode ??
         DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
@@ -230,6 +233,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
       consequences: _consequences,
       selfRemove: _selfRemove,
       priority: _priority,
+      areaId: _areaId,
       isEnding: _isEnding,
       groupId: _groupId,
     );
@@ -335,8 +339,11 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                 preconditions: _preconditions,
                 consequences: _consequences,
                 groupId: _groupId,
+                areaId: _areaId,
+                areas: widget.editor.areas.values.toList()
+                  ..sort((a, b) => a.id.compareTo(b.id)),
                 activeSpeakerId: _activeSpeakerId,
-                onChanged: (charIds, st, sr, ending, prio, pre, cons, gId) =>
+                onChanged: (charIds, st, sr, ending, prio, pre, cons, gId, aId) =>
                     setState(() {
                   _selectedCharIds = charIds;
                   _singleTrigger = st;
@@ -346,6 +353,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                   _preconditions = pre;
                   _consequences = cons;
                   _groupId = gId;
+                  _areaId = aId;
                 }),
                 onActiveSpeakerChanged: (id) =>
                     setState(() => _activeSpeakerId = id),
@@ -407,6 +415,7 @@ class _MetaPanel extends StatefulWidget {
     required this.chars,
     required this.flags,
     required this.groups,
+    required this.areas,
     required this.selectedCharIds,
     required this.singleTrigger,
     required this.selfRemove,
@@ -415,6 +424,7 @@ class _MetaPanel extends StatefulWidget {
     required this.preconditions,
     required this.consequences,
     required this.groupId,
+    required this.areaId,
     required this.activeSpeakerId,
     required this.onChanged,
     required this.onActiveSpeakerChanged,
@@ -424,6 +434,7 @@ class _MetaPanel extends StatefulWidget {
   final List<Character> chars;
   final List<StateFlag> flags;
   final List<DialogueGroup> groups;
+  final List<Area> areas;
   final List<int> selectedCharIds;
   final bool singleTrigger;
   final bool selfRemove;
@@ -432,6 +443,7 @@ class _MetaPanel extends StatefulWidget {
   final Map<int, bool> preconditions;
   final Map<int, bool> consequences;
   final int? groupId;
+  final int? areaId;
   final int activeSpeakerId;
   final void Function(
     List<int>,
@@ -441,6 +453,7 @@ class _MetaPanel extends StatefulWidget {
     int,
     Map<int, bool>,
     Map<int, bool>,
+    int?,
     int?,
   )
   onChanged;
@@ -456,6 +469,7 @@ class _MetaPanelState extends State<_MetaPanel> {
   late int _prio;
   late Map<int, bool> _pre, _cons;
   int? _groupId;
+  int? _areaId;
 
   @override
   void initState() {
@@ -468,10 +482,11 @@ class _MetaPanelState extends State<_MetaPanel> {
     _pre = Map.of(widget.preconditions);
     _cons = Map.of(widget.consequences);
     _groupId = widget.groupId;
+    _areaId = widget.areaId;
   }
 
   void _notify() =>
-      widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons, _groupId);
+      widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons, _groupId, _areaId);
 
   void _addFlagCondition(Map<int, bool> map, bool defaultVal) {
     final available = widget.flags.where((f) => !map.containsKey(f.id)).toList();
@@ -605,6 +620,35 @@ class _MetaPanelState extends State<_MetaPanel> {
             }).toList(),
           ),
         const SizedBox(height: 16),
+
+        // ── Area restriction ────────────────────────────────────────────────
+        if (widget.areas.isNotEmpty) ...[
+          _SectionHeader(icon: Icons.map_outlined, label: 'Área'),
+          DropdownButtonFormField<int?>(
+            value: _areaId,
+            decoration: const InputDecoration(
+              hintText: 'Qualquer área',
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+            items: [
+              const DropdownMenuItem<int?>(
+                value: null,
+                child: Text('Qualquer área', style: TextStyle(fontSize: 13)),
+              ),
+              ...widget.areas.map(
+                (a) => DropdownMenuItem<int?>(
+                  value: a.id,
+                  child: Text(a.name, style: const TextStyle(fontSize: 13)),
+                ),
+              ),
+            ],
+            onChanged: (v) {
+              setState(() => _areaId = v);
+              _notify();
+            },
+          ),
+          const SizedBox(height: 16),
+        ],
 
         // ── Group ────────────────────────────────────────────────────────────
         if (widget.groups.isNotEmpty) ...[

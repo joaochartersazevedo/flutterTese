@@ -2,7 +2,21 @@
   "permissions": {
     "allow": [
       "Bash(flutter analyze *)",
-      "Bash(flutter build *)"
+      "Bash(flutter build *)",
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(git commit *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); chars=d.get\\('characters',{}\\); areas=d.get\\('areas',{}\\); print\\('CHARS:'\\); [print\\(f' {v[\\\\\"name\\\\\"]}: portrait={v.get\\(\\\\\"portraitPath\\\\\",\\\\\"\\\\\"\\)}, body={v.get\\(\\\\\"bodyPath\\\\\",\\\\\"\\\\\"\\)}'\\) for v in chars.values\\(\\)]; print\\('AREAS:'\\); [print\\(f' {v[\\\\\"name\\\\\"]}: bg={v.get\\(\\\\\"backgroundPath\\\\\",\\\\\"\\\\\"\\)}'\\) for v in areas.values\\(\\)]\")",
+      "Bash(cp -r /home/jonhy/Documents/mainTese/flutterTese/tese/assets /home/jonhy/Documents/mainTese/flutterTese/tese_assets)",
+      "Read(//home/jonhy/Documents/mainTese/flutterTese/**)",
+      "Bash(git -C /home/jonhy/Documents/mainTese/flutterTese/tese status)",
+      "Bash(git -C /home/jonhy/Documents/mainTese/flutterTese/tese diff HEAD)",
+      "Bash(git *)",
+      "Bash(flutter run *)",
+      "Bash(kill %1)"
     ]
   }
 }

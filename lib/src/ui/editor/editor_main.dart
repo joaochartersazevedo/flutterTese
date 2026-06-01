@@ -593,6 +593,18 @@ class _EventTab extends StatelessWidget {
         );
         if (result != null) editor.addEvent(result);
       },
+      onEdit: (e) async {
+        final result = await Navigator.push<Event>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AddEventScreen(editor: editor, existing: e),
+          ),
+        );
+        if (result != null) {
+          editor.removeEvent(e.id);
+          editor.addEvent(result);
+        }
+      },
       onDelete: (e) => editor.removeEvent(e.id),
     );
   }

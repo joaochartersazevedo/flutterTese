@@ -33,7 +33,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late final BlueprintEditor _editor;
   GameEngine? _engine;
   SaveData? _currentSave;
@@ -53,6 +53,7 @@ class _AppShellState extends State<AppShell> {
       DialogueAiService.instance.setApiKey(savedKey);
     }
     _editor = BlueprintEditor();
+    WidgetsBinding.instance.addObserver(this);
     _loadWorld();
   }
 
@@ -71,10 +72,23 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _engine?.removeListener(_onEngineChanged);
     _editor.dispose();
     _engine?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.inactive) {
+      _saveWorld();
+      if (_currentSave != null && _engine != null) {
+        SaveFileService.saveSave(_engine!.saveState(_currentSave!.saveName));
+      }
+    }
   }
 
   // ── Auto-save ────────────────────────────────────────────────────────────

@@ -458,13 +458,70 @@ class GameEngine extends ChangeNotifier {
           }
         }
         break;
+      case EventType.toggleArea:
+        final tArea = _area(event.targetId);
+        if (tArea != null) {
+          _replace(_areas, (a) => a.id == tArea.id, tArea.copyWith(locked: !tArea.locked));
+          _logLine('Area ${tArea.name} ${tArea.locked ? "desbloqueada" : "bloqueada"}.');
+          changed = true;
+        }
+        break;
+      case EventType.enableConnection:
+      case EventType.disableConnection:
+        final conn = _conn(event.targetId);
+        if (conn != null) {
+          final lock = event.type == EventType.disableConnection;
+          if (conn.locked != lock) {
+            _replace(_connections, (c) => c.id == conn.id, conn.copyWith(locked: lock));
+            _logLine('Ligação ${conn.label} ${lock ? "bloqueada" : "desbloqueada"}.');
+            changed = true;
+          }
+        }
+        break;
+      case EventType.toggleConnection:
+        final tConn = _conn(event.targetId);
+        if (tConn != null) {
+          _replace(_connections, (c) => c.id == tConn.id, tConn.copyWith(locked: !tConn.locked));
+          _logLine('Ligação ${tConn.label} ${tConn.locked ? "desbloqueada" : "bloqueada"}.');
+          changed = true;
+        }
+        break;
       case EventType.activateGameState:
         changed = _setGameState(event.targetId, true) || changed;
         break;
       case EventType.deactivateGameState:
         changed = _setGameState(event.targetId, false) || changed;
         break;
-      default:
+      case EventType.toggleGameState:
+        final gs = _state(event.targetId);
+        if (gs != null) changed = _setGameState(event.targetId, !gs.value) || changed;
+        break;
+      case EventType.forceDialogue:
+        final fd = _dialoguesPool.where((d) => d.id == event.targetId).firstOrNull;
+        if (fd != null && !_activeDialogues.contains(fd)) {
+          _activeDialogues.add(fd);
+          _logLine('Diálogo ativado: ${fd.name}');
+          changed = true;
+        }
+        break;
+      case EventType.removeDialogue:
+        final rd = _activeDialogues.where((d) => d.id == event.targetId).firstOrNull;
+        if (rd != null) {
+          _activeDialogues.remove(rd);
+          _dialoguesPool.removeWhere((d) => d.id == event.targetId);
+          _logLine('Diálogo removido: ${rd.name}');
+          changed = true;
+        }
+        break;
+      case EventType.forceEvent:
+        final fe = _events.where((e) => e.id == event.targetId).firstOrNull;
+        if (fe != null) {
+          changed = _applyEvent(fe) || changed;
+        }
+        break;
+      case EventType.removeEvent:
+        _events.removeWhere((e) => e.id == event.targetId);
+        changed = true;
         break;
     }
     _applyConsequences(event.consequences);

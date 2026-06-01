@@ -77,6 +77,18 @@ class BlueprintEditor extends ChangeNotifier {
         _removeConnectionInternal(conn.id);
       }
     }
+    // Reassign characters whose home area was deleted to area 0
+    for (final entry in characters.entries) {
+      if (entry.value.areaId == id && entry.key != playerId) {
+        characters[entry.key] = entry.value.copyWith(areaId: 0);
+      }
+    }
+    _removeEventsTargeting(id);
+  }
+
+  /// Removes all events whose targetId matches [id].
+  void _removeEventsTargeting(int id) {
+    events.removeWhere((_, e) => e.targetId == id);
   }
 
   /// Clears areaId from all dialogues that reference [areaId], without deleting them.
@@ -145,6 +157,7 @@ class BlueprintEditor extends ChangeNotifier {
         areas[conn.areaB] =
             b.copyWith(connectionIds: b.connectionIds.where((c) => c != id).toList());
       }
+      _removeEventsTargeting(id);
     }
   }
 
@@ -163,13 +176,13 @@ class BlueprintEditor extends ChangeNotifier {
   void removeCharacter(int id) {
     if (id == playerId) return;
     characters.remove(id);
-    // Remove this character from other characters' relationships
     for (final entry in characters.entries) {
       if (entry.value.relationships.containsKey(id)) {
         final newRels = Map<int, String>.from(entry.value.relationships)..remove(id);
         characters[entry.key] = entry.value.copyWith(relationships: newRels);
       }
     }
+    _removeEventsTargeting(id);
     notifyListeners();
   }
 
@@ -301,6 +314,7 @@ class BlueprintEditor extends ChangeNotifier {
         groups[d.groupId!] = g.withOrder(g.orderedDialogueIds.where((i) => i != id).toList());
       }
     }
+    _removeEventsTargeting(id);
   }
 
   // ------ Groups ------
