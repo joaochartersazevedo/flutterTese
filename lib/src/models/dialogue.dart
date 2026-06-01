@@ -140,7 +140,7 @@ class Dialogue {
     required this.consequences,
     this.selfRemove = false,
     this.priority = 0,
-    this.areaId,
+    this.areaIds = const [],
     this.topic,
     this.isEnding = false,
     this.groupId,
@@ -157,7 +157,8 @@ class Dialogue {
   final Map<int, bool> consequences;
   final bool selfRemove;
   final int priority;
-  final int? areaId;
+  /// Empty = triggers in any area. Non-empty = only in listed areas.
+  final List<int> areaIds;
   final String? topic;
   final bool isEnding;
   final int? groupId;
@@ -172,28 +173,37 @@ class Dialogue {
         'consequences': consequences.map((k, v) => MapEntry(k.toString(), v)),
         'selfRemove': selfRemove,
         'priority': priority,
-        if (areaId != null) 'areaId': areaId,
+        if (areaIds.isNotEmpty) 'areaIds': areaIds,
         if (topic != null) 'topic': topic,
         'isEnding': isEnding,
         if (groupId != null) 'groupId': groupId,
       };
 
-  factory Dialogue.fromJson(Map<String, dynamic> j) => Dialogue(
-        id: j['id'] as int,
-        name: j['name'] as String,
-        characterIds: (j['characterIds'] as List).cast<int>(),
-        parentNode:
-            DialogueNode.fromJson(j['parentNode'] as Map<String, dynamic>),
-        singleTrigger: j['singleTrigger'] as bool,
-        preconditions: (j['preconditions'] as Map<String, dynamic>)
-            .map((k, v) => MapEntry(int.parse(k), v as bool)),
-        consequences: (j['consequences'] as Map<String, dynamic>)
-            .map((k, v) => MapEntry(int.parse(k), v as bool)),
-        selfRemove: j['selfRemove'] as bool? ?? false,
-        priority: j['priority'] as int? ?? 0,
-        areaId: j['areaId'] as int?,
-        topic: j['topic'] as String?,
-        isEnding: j['isEnding'] as bool? ?? false,
-        groupId: j['groupId'] as int?,
-      );
+  factory Dialogue.fromJson(Map<String, dynamic> j) {
+    // Migrate legacy single areaId field
+    List<int> areaIds = [];
+    if (j['areaIds'] != null) {
+      areaIds = (j['areaIds'] as List).cast<int>();
+    } else if (j['areaId'] != null) {
+      areaIds = [j['areaId'] as int];
+    }
+    return Dialogue(
+      id: j['id'] as int,
+      name: j['name'] as String,
+      characterIds: (j['characterIds'] as List).cast<int>(),
+      parentNode:
+          DialogueNode.fromJson(j['parentNode'] as Map<String, dynamic>),
+      singleTrigger: j['singleTrigger'] as bool,
+      preconditions: (j['preconditions'] as Map<String, dynamic>)
+          .map((k, v) => MapEntry(int.parse(k), v as bool)),
+      consequences: (j['consequences'] as Map<String, dynamic>)
+          .map((k, v) => MapEntry(int.parse(k), v as bool)),
+      selfRemove: j['selfRemove'] as bool? ?? false,
+      priority: j['priority'] as int? ?? 0,
+      areaIds: areaIds,
+      topic: j['topic'] as String?,
+      isEnding: j['isEnding'] as bool? ?? false,
+      groupId: j['groupId'] as int?,
+    );
+  }
 }

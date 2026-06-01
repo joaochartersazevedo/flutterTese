@@ -76,7 +76,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
   late Map<int, bool> _preconditions;
   late Map<int, bool> _consequences;
   int? _groupId;
-  int? _areaId;
+  late List<int> _areaIds;
 
   // ── tree ──────────────────────────────────────────────────────────────────
   late DialogueNode _root;
@@ -195,7 +195,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     _preconditions = ex != null ? Map.of(ex.preconditions) : {};
     _consequences = ex != null ? Map.of(ex.consequences) : {};
     _groupId = ex?.groupId;
-    _areaId = ex?.areaId;
+    _areaIds = ex != null ? List.of(ex.areaIds) : [];
     _root =
         ex?.parentNode ??
         DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
@@ -233,7 +233,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
       consequences: _consequences,
       selfRemove: _selfRemove,
       priority: _priority,
-      areaId: _areaId,
+      areaIds: _areaIds,
       isEnding: _isEnding,
       groupId: _groupId,
     );
@@ -339,11 +339,11 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                 preconditions: _preconditions,
                 consequences: _consequences,
                 groupId: _groupId,
-                areaId: _areaId,
+                areaIds: _areaIds,
                 areas: widget.editor.areas.values.toList()
                   ..sort((a, b) => a.id.compareTo(b.id)),
                 activeSpeakerId: _activeSpeakerId,
-                onChanged: (charIds, st, sr, ending, prio, pre, cons, gId, aId) =>
+                onChanged: (charIds, st, sr, ending, prio, pre, cons, gId, aIds) =>
                     setState(() {
                   _selectedCharIds = charIds;
                   _singleTrigger = st;
@@ -353,7 +353,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                   _preconditions = pre;
                   _consequences = cons;
                   _groupId = gId;
-                  _areaId = aId;
+                  _areaIds = aIds;
                 }),
                 onActiveSpeakerChanged: (id) =>
                     setState(() => _activeSpeakerId = id),
@@ -424,7 +424,7 @@ class _MetaPanel extends StatefulWidget {
     required this.preconditions,
     required this.consequences,
     required this.groupId,
-    required this.areaId,
+    required this.areaIds,
     required this.activeSpeakerId,
     required this.onChanged,
     required this.onActiveSpeakerChanged,
@@ -443,7 +443,7 @@ class _MetaPanel extends StatefulWidget {
   final Map<int, bool> preconditions;
   final Map<int, bool> consequences;
   final int? groupId;
-  final int? areaId;
+  final List<int> areaIds;
   final int activeSpeakerId;
   final void Function(
     List<int>,
@@ -454,7 +454,7 @@ class _MetaPanel extends StatefulWidget {
     Map<int, bool>,
     Map<int, bool>,
     int?,
-    int?,
+    List<int>,
   )
   onChanged;
   final void Function(int speakerId) onActiveSpeakerChanged;
@@ -469,7 +469,7 @@ class _MetaPanelState extends State<_MetaPanel> {
   late int _prio;
   late Map<int, bool> _pre, _cons;
   int? _groupId;
-  int? _areaId;
+  late List<int> _areaIds;
 
   @override
   void initState() {
@@ -482,11 +482,11 @@ class _MetaPanelState extends State<_MetaPanel> {
     _pre = Map.of(widget.preconditions);
     _cons = Map.of(widget.consequences);
     _groupId = widget.groupId;
-    _areaId = widget.areaId;
+    _areaIds = List.of(widget.areaIds);
   }
 
   void _notify() =>
-      widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons, _groupId, _areaId);
+      widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons, _groupId, _areaIds);
 
   void _addFlagCondition(Map<int, bool> map, bool defaultVal) {
     final available = widget.flags.where((f) => !map.containsKey(f.id)).toList();
@@ -623,29 +623,47 @@ class _MetaPanelState extends State<_MetaPanel> {
 
         // ── Area restriction ────────────────────────────────────────────────
         if (widget.areas.isNotEmpty) ...[
-          _SectionHeader(icon: Icons.map_outlined, label: 'Área'),
-          DropdownButtonFormField<int?>(
-            value: _areaId,
-            decoration: const InputDecoration(
-              hintText: 'Qualquer área',
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          _SectionHeader(icon: Icons.map_outlined, label: 'Áreas'),
+          if (_areaIds.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                'Qualquer área',
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
             ),
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('Qualquer área', style: TextStyle(fontSize: 13)),
-              ),
-              ...widget.areas.map(
-                (a) => DropdownMenuItem<int?>(
-                  value: a.id,
-                  child: Text(a.name, style: const TextStyle(fontSize: 13)),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: widget.areas.map((a) {
+              final sel = _areaIds.contains(a.id);
+              return FilterChip(
+                label: Text(a.name, style: const TextStyle(fontSize: 11)),
+                selected: sel,
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _areaIds.add(a.id);
+                    } else {
+                      _areaIds.remove(a.id);
+                    }
+                  });
+                  _notify();
+                },
+                selectedColor: AppColors.teal.withValues(alpha: 0.18),
+                checkmarkColor: AppColors.teal,
+                labelStyle: TextStyle(
+                  color: sel ? AppColors.teal : AppColors.textSecondary,
                 ),
-              ),
-            ],
-            onChanged: (v) {
-              setState(() => _areaId = v);
-              _notify();
-            },
+                side: BorderSide(
+                  color: sel
+                      ? AppColors.teal.withValues(alpha: 0.5)
+                      : AppColors.border,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              );
+            }).toList(),
           ),
           const SizedBox(height: 16),
         ],

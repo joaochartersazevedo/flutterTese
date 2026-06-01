@@ -347,9 +347,11 @@ class _DialogueCard extends StatelessWidget {
     final d = dialogue;
 
     // Resolve metadata
-    final areaName = d.areaId != null
-        ? (editor.areas[d.areaId]?.name ?? 'área ${d.areaId}')
-        : null;
+    final areaName = d.areaIds.isEmpty
+        ? null
+        : d.areaIds
+            .map((id) => editor.areas[id]?.name ?? 'área $id')
+            .join(', ');
     final group = d.groupId != null ? editor.groups[d.groupId] : null;
     final isEntry = group != null &&
         group.orderedDialogueIds.isNotEmpty &&

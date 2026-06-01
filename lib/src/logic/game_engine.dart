@@ -100,7 +100,7 @@ class GameEngine extends ChangeNotifier {
 
   List<Dialogue> get currentAreaDialogues =>
       _activeDialogues
-          .where((d) => d.areaId == null || d.areaId == _currentAreaId)
+          .where((d) => d.areaIds.isEmpty || d.areaIds.contains(_currentAreaId))
           .toList()
         ..sort((a, b) => b.priority.compareTo(a.priority));
 

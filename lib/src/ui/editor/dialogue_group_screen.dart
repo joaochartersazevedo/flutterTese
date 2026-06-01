@@ -537,8 +537,8 @@ class _MembersDialogState extends State<_MembersDialog> {
                     ),
                     title: Text(d.name,
                         style: const TextStyle(fontSize: 13)),
-                    subtitle: d.areaId != null
-                        ? Text('área ${d.areaId}',
+                    subtitle: d.areaIds.isNotEmpty
+                        ? Text(d.areaIds.map((a) => 'área $a').join(', '),
                             style: const TextStyle(
                                 fontSize: 11, color: AppColors.textMuted))
                         : null,
@@ -630,8 +630,8 @@ class _EntryCard extends StatelessWidget {
             fontSize: 13,
           ),
         ),
-        subtitle: dialogue.areaId != null
-            ? Text('área ${dialogue.areaId}',
+        subtitle: dialogue.areaIds.isNotEmpty
+            ? Text(dialogue.areaIds.map((a) => 'área $a').join(', '),
                 style: const TextStyle(
                     fontSize: 11, color: AppColors.textMuted))
             : null,
@@ -686,10 +686,9 @@ class _SeqTile extends StatelessWidget {
         ],
       ),
       title: Text(dialogue.name, style: const TextStyle(fontSize: 13)),
-      subtitle: dialogue.areaId != null
-          ? Text('área ${dialogue.areaId}',
-              style:
-                  const TextStyle(fontSize: 11, color: AppColors.textMuted))
+      subtitle: dialogue.areaIds.isNotEmpty
+          ? Text(dialogue.areaIds.map((a) => 'área $a').join(', '),
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted))
           : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

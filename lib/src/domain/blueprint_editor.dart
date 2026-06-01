@@ -91,10 +91,10 @@ class BlueprintEditor extends ChangeNotifier {
     events.removeWhere((_, e) => e.targetId == id);
   }
 
-  /// Clears areaId from all dialogues that reference [areaId], without deleting them.
+  /// Removes [areaId] from areaIds of all dialogues that reference it.
   void removeAreaFromDialogues(int areaId) {
     for (final entry in dialogues.entries) {
-      if (entry.value.areaId == areaId) {
+      if (entry.value.areaIds.contains(areaId)) {
         dialogues[entry.key] = Dialogue(
           id: entry.value.id,
           name: entry.value.name,
@@ -105,7 +105,7 @@ class BlueprintEditor extends ChangeNotifier {
           consequences: entry.value.consequences,
           selfRemove: entry.value.selfRemove,
           priority: entry.value.priority,
-          areaId: null,
+          areaIds: entry.value.areaIds.where((a) => a != areaId).toList(),
           topic: entry.value.topic,
           isEnding: entry.value.isEnding,
           groupId: entry.value.groupId,
@@ -200,7 +200,7 @@ class BlueprintEditor extends ChangeNotifier {
           consequences: entry.value.consequences,
           selfRemove: entry.value.selfRemove,
           priority: entry.value.priority,
-          areaId: entry.value.areaId,
+          areaIds: entry.value.areaIds,
           topic: entry.value.topic,
           isEnding: entry.value.isEnding,
           groupId: entry.value.groupId,
@@ -232,7 +232,7 @@ class BlueprintEditor extends ChangeNotifier {
 
   /// Returns all dialogues that reference [areaId].
   List<Dialogue> dialoguesForArea(int areaId) =>
-      dialogues.values.where((d) => d.areaId == areaId).toList();
+      dialogues.values.where((d) => d.areaIds.contains(areaId)).toList();
 
   /// Returns all characters assigned to [areaId].
   List<Character> charactersInArea(int areaId) =>
@@ -278,7 +278,7 @@ class BlueprintEditor extends ChangeNotifier {
           consequences: newCons,
           selfRemove: d.selfRemove,
           priority: d.priority,
-          areaId: d.areaId,
+          areaIds: d.areaIds,
           topic: d.topic,
           isEnding: d.isEnding,
           groupId: d.groupId,
@@ -344,7 +344,7 @@ class BlueprintEditor extends ChangeNotifier {
           consequences: entry.value.consequences,
           selfRemove: entry.value.selfRemove,
           priority: entry.value.priority,
-          areaId: entry.value.areaId,
+          areaIds: entry.value.areaIds,
           topic: entry.value.topic,
           isEnding: entry.value.isEnding,
         );
@@ -362,8 +362,12 @@ class BlueprintEditor extends ChangeNotifier {
     final firstId = g.orderedDialogueIds.first;
     final first = dialogues[firstId];
     if (first == null) return null;
-    if (d.areaId != first.areaId) {
-      return 'Diálogo está na área ${d.areaId ?? "?"} mas o grupo usa área ${first.areaId ?? "?"}.';
+    // Warn if both have explicit areas and they don't overlap
+    if (d.areaIds.isNotEmpty && first.areaIds.isNotEmpty) {
+      final overlap = d.areaIds.any((a) => first.areaIds.contains(a));
+      if (!overlap) {
+        return 'Diálogos têm áreas incompatíveis: ${d.areaIds} vs ${first.areaIds}.';
+      }
     }
     return null;
   }
@@ -383,7 +387,7 @@ class BlueprintEditor extends ChangeNotifier {
       consequences: d.consequences,
       selfRemove: d.selfRemove,
       priority: d.priority,
-      areaId: d.areaId,
+      areaIds: d.areaIds,
       topic: d.topic,
       isEnding: d.isEnding,
       groupId: groupId,
