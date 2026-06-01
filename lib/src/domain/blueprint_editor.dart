@@ -66,12 +66,49 @@ class BlueprintEditor extends ChangeNotifier {
   }
 
   void removeArea(int id) {
+    _removeAreaInternal(id);
+    notifyListeners();
+  }
+
+  void _removeAreaInternal(int id) {
     areas.remove(id);
     for (final conn in connections.values.toList()) {
       if (conn.areaA == id || conn.areaB == id) {
-        connections.remove(conn.id);
+        _removeConnectionInternal(conn.id);
       }
     }
+  }
+
+  /// Clears areaId from all dialogues that reference [areaId], without deleting them.
+  void removeAreaFromDialogues(int areaId) {
+    for (final entry in dialogues.entries) {
+      if (entry.value.areaId == areaId) {
+        dialogues[entry.key] = Dialogue(
+          id: entry.value.id,
+          name: entry.value.name,
+          characterIds: entry.value.characterIds,
+          parentNode: entry.value.parentNode,
+          singleTrigger: entry.value.singleTrigger,
+          preconditions: entry.value.preconditions,
+          consequences: entry.value.consequences,
+          selfRemove: entry.value.selfRemove,
+          priority: entry.value.priority,
+          areaId: null,
+          topic: entry.value.topic,
+          isEnding: entry.value.isEnding,
+          groupId: entry.value.groupId,
+        );
+      }
+    }
+  }
+
+  /// Brute-force: deletes area + connections + all dialogues referencing the area.
+  void removeAreaBrute(int id) {
+    final affectedDialogueIds = dialoguesForArea(id).map((d) => d.id).toList();
+    for (final dId in affectedDialogueIds) {
+      _removeDialogueInternal(dId);
+    }
+    _removeAreaInternal(id);
     notifyListeners();
   }
 
@@ -91,6 +128,11 @@ class BlueprintEditor extends ChangeNotifier {
   }
 
   void removeConnection(int id) {
+    _removeConnectionInternal(id);
+    notifyListeners();
+  }
+
+  void _removeConnectionInternal(int id) {
     final conn = connections.remove(id);
     if (conn != null) {
       final a = areas[conn.areaA];
@@ -104,7 +146,6 @@ class BlueprintEditor extends ChangeNotifier {
             b.copyWith(connectionIds: b.connectionIds.where((c) => c != id).toList());
       }
     }
-    notifyListeners();
   }
 
   // ------ Characters ------
@@ -122,8 +163,73 @@ class BlueprintEditor extends ChangeNotifier {
   void removeCharacter(int id) {
     if (id == playerId) return;
     characters.remove(id);
+    // Remove this character from other characters' relationships
+    for (final entry in characters.entries) {
+      if (entry.value.relationships.containsKey(id)) {
+        final newRels = Map<int, String>.from(entry.value.relationships)..remove(id);
+        characters[entry.key] = entry.value.copyWith(relationships: newRels);
+      }
+    }
     notifyListeners();
   }
+
+  /// Removes character from all dialogue characterIds without deleting dialogues.
+  void removeCharacterFromDialogues(int charId) {
+    for (final entry in dialogues.entries) {
+      if (entry.value.characterIds.contains(charId)) {
+        dialogues[entry.key] = Dialogue(
+          id: entry.value.id,
+          name: entry.value.name,
+          characterIds: entry.value.characterIds.where((c) => c != charId).toList(),
+          parentNode: entry.value.parentNode,
+          singleTrigger: entry.value.singleTrigger,
+          preconditions: entry.value.preconditions,
+          consequences: entry.value.consequences,
+          selfRemove: entry.value.selfRemove,
+          priority: entry.value.priority,
+          areaId: entry.value.areaId,
+          topic: entry.value.topic,
+          isEnding: entry.value.isEnding,
+          groupId: entry.value.groupId,
+        );
+      }
+    }
+  }
+
+  /// Brute-force: deletes character + all dialogues that reference them.
+  void removeCharacterBrute(int id) {
+    if (id == playerId) return;
+    final affectedIds = dialoguesForCharacter(id).map((d) => d.id).toList();
+    for (final dId in affectedIds) {
+      _removeDialogueInternal(dId);
+    }
+    characters.remove(id);
+    for (final entry in characters.entries) {
+      if (entry.value.relationships.containsKey(id)) {
+        final newRels = Map<int, String>.from(entry.value.relationships)..remove(id);
+        characters[entry.key] = entry.value.copyWith(relationships: newRels);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Returns all dialogues that reference [charId].
+  List<Dialogue> dialoguesForCharacter(int charId) =>
+      dialogues.values.where((d) => d.characterIds.contains(charId)).toList();
+
+  /// Returns all dialogues that reference [areaId].
+  List<Dialogue> dialoguesForArea(int areaId) =>
+      dialogues.values.where((d) => d.areaId == areaId).toList();
+
+  /// Returns all characters assigned to [areaId].
+  List<Character> charactersInArea(int areaId) =>
+      characters.values.where((c) => c.areaId == areaId && c.id != playerId).toList();
+
+  /// Returns all dialogues that reference [stateFlagId] in preconditions or consequences.
+  List<Dialogue> dialoguesForStateFlag(int flagId) =>
+      dialogues.values
+          .where((d) => d.preconditions.containsKey(flagId) || d.consequences.containsKey(flagId))
+          .toList();
 
   // ------ State Flags ------
 
@@ -142,6 +248,34 @@ class BlueprintEditor extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes state flag references from all dialogue preconditions/consequences, then deletes the flag.
+  void removeStateFlagClean(int id) {
+    for (final entry in dialogues.entries) {
+      final d = entry.value;
+      if (d.preconditions.containsKey(id) || d.consequences.containsKey(id)) {
+        final newPre = Map<int, bool>.from(d.preconditions)..remove(id);
+        final newCons = Map<int, bool>.from(d.consequences)..remove(id);
+        dialogues[entry.key] = Dialogue(
+          id: d.id,
+          name: d.name,
+          characterIds: d.characterIds,
+          parentNode: d.parentNode,
+          singleTrigger: d.singleTrigger,
+          preconditions: newPre,
+          consequences: newCons,
+          selfRemove: d.selfRemove,
+          priority: d.priority,
+          areaId: d.areaId,
+          topic: d.topic,
+          isEnding: d.isEnding,
+          groupId: d.groupId,
+        );
+      }
+    }
+    gamestates.remove(id);
+    notifyListeners();
+  }
+
   // ------ Dialogues ------
 
   void addDialogue(Dialogue d) {
@@ -155,8 +289,18 @@ class BlueprintEditor extends ChangeNotifier {
   }
 
   void removeDialogue(int id) {
-    dialogues.remove(id);
+    _removeDialogueInternal(id);
     notifyListeners();
+  }
+
+  void _removeDialogueInternal(int id) {
+    final d = dialogues.remove(id);
+    if (d?.groupId != null) {
+      final g = groups[d!.groupId!];
+      if (g != null) {
+        groups[d.groupId!] = g.withOrder(g.orderedDialogueIds.where((i) => i != id).toList());
+      }
+    }
   }
 
   // ------ Groups ------

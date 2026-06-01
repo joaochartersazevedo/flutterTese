@@ -74,7 +74,7 @@ class _AddAreaScreenState extends State<AddAreaScreen> {
                   const SizedBox(height: 24),
                   ImagePickerField(
                     label: 'Imagem de fundo',
-                    subdirectory: 'editor/areas',
+                    subdirectory: 'areas',
                     initialPath: _bgPath,
                     onChanged: (path) => setState(() => _bgPath = path),
                   ),

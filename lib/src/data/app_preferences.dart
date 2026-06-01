@@ -33,11 +33,23 @@ class AppPreferences {
     _persist();
   }
 
-  static String get imagesRoot => (_data['imagesRoot'] as String?) ?? '';
-  static void setImagesRoot(String v) {
-    _data['imagesRoot'] = v;
+  static String get assetsRoot {
+    final v = (_data['assetsRoot'] as String?) ?? '';
+    if (v.isNotEmpty) return v;
+    // migrate old key
+    return (_data['imagesRoot'] as String?) ?? '';
+  }
+
+  static void setAssetsRoot(String v) {
+    _data['assetsRoot'] = v;
+    _data.remove('imagesRoot');
     _persist();
   }
+
+  @Deprecated('use assetsRoot')
+  static String get imagesRoot => assetsRoot;
+  @Deprecated('use setAssetsRoot')
+  static void setImagesRoot(String v) => setAssetsRoot(v);
 
   static bool get ollamaEnabled => (_data['ollamaEnabled'] as bool?) ?? false;
   static void setOllamaEnabled(bool v) {
@@ -53,7 +65,7 @@ class AppPreferences {
   }
 
   static String get ollamaModel =>
-      (_data['ollamaModel'] as String?) ?? 'gemma3:4b';
+      (_data['ollamaModel'] as String?) ?? 'gemma4:latest';
   static void setOllamaModel(String v) {
     _data['ollamaModel'] = v;
     _persist();

@@ -226,22 +226,160 @@ class _CharacterRelationshipScreenState
   }
 
   void _deleteCharacter(BuildContext ctx, Character char) {
+    final affected = widget.editor.dialoguesForCharacter(char.id);
+
+    if (affected.isEmpty) {
+      showDialog<void>(
+        context: ctx,
+        builder: (dlgCtx) => AlertDialog(
+          title: const Text('Remover personagem'),
+          content: Text('Remover "${char.name}"?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dlgCtx),
+                child: const Text('Cancelar')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              onPressed: () {
+                widget.editor.removeCharacter(char.id);
+                Navigator.pop(dlgCtx);
+              },
+              child: const Text('Remover'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // Has affected dialogues — show warning
     showDialog<void>(
       context: ctx,
       builder: (dlgCtx) => AlertDialog(
-        title: const Text('Remover personagem'),
-        content: Text('Remover "${char.name}"?'),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 22),
+            const SizedBox(width: 8),
+            const Text('Remover personagem'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '"${char.name}" está presente em ${affected.length} diálogo${affected.length == 1 ? '' : 's'}:',
+            ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 180),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: affected
+                      .map((d) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.chat_bubble_outline,
+                                    size: 13, color: AppColors.textMuted),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(d.name,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.textSecondary)),
+                                ),
+                              ],
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Escolhe como remover:',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dlgCtx),
               child: const Text('Cancelar')),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(foregroundColor: AppColors.warning),
             onPressed: () {
+              Navigator.pop(dlgCtx);
+              _confirmSmartDeleteChar(ctx, char, affected.length);
+            },
+            child: const Text('Remover dos diálogos'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () {
+              Navigator.pop(dlgCtx);
+              _confirmBruteDeleteChar(ctx, char, affected.length);
+            },
+            child: const Text('Eliminar tudo'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmSmartDeleteChar(BuildContext ctx, Character char, int count) {
+    showDialog<void>(
+      context: ctx,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Confirmar remoção'),
+        content: Text(
+          'Remove "${char.name}" de $count diálogo${count == 1 ? '' : 's'} e elimina o personagem.\n\nOs diálogos ficam intactos.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.warning),
+            onPressed: () {
+              widget.editor.removeCharacterFromDialogues(char.id);
               widget.editor.removeCharacter(char.id);
               Navigator.pop(dlgCtx);
             },
-            child: const Text('Remover'),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmBruteDeleteChar(BuildContext ctx, Character char, int count) {
+    showDialog<void>(
+      context: ctx,
+      builder: (dlgCtx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.delete_forever, color: AppColors.error, size: 22),
+            const SizedBox(width: 8),
+            const Text('Eliminar tudo'),
+          ],
+        ),
+        content: Text(
+          'Elimina "${char.name}" E os $count diálogo${count == 1 ? '' : 's'} onde aparece.\n\nEsta ação é irreversível.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () {
+              widget.editor.removeCharacterBrute(char.id);
+              Navigator.pop(dlgCtx);
+            },
+            child: const Text('Eliminar tudo'),
           ),
         ],
       ),

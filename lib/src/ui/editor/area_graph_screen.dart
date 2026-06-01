@@ -189,22 +189,207 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
   }
 
   void _deleteArea(BuildContext ctx, Area area) {
+    final affectedDialogues = widget.editor.dialoguesForArea(area.id);
+    final affectedChars = widget.editor.charactersInArea(area.id);
+    final hasImpact = affectedDialogues.isNotEmpty || affectedChars.isNotEmpty;
+
+    if (!hasImpact) {
+      showDialog<void>(
+        context: ctx,
+        builder: (dlgCtx) => AlertDialog(
+          title: const Text('Remover área'),
+          content: Text('Remover "${area.name}"?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dlgCtx),
+                child: const Text('Cancelar')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              onPressed: () {
+                widget.editor.removeArea(area.id);
+                Navigator.pop(dlgCtx);
+              },
+              child: const Text('Remover'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     showDialog<void>(
       context: ctx,
       builder: (dlgCtx) => AlertDialog(
-        title: const Text('Remover area'),
-        content: Text('Remover "${area.name}"?'),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 22),
+            const SizedBox(width: 8),
+            const Text('Remover área'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (affectedDialogues.isNotEmpty) ...[
+              Text(
+                '${affectedDialogues.length} diálogo${affectedDialogues.length == 1 ? '' : 's'} referencia${affectedDialogues.length == 1 ? '' : 'm'} esta área:',
+              ),
+              const SizedBox(height: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 120),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: affectedDialogues
+                        .map((d) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.chat_bubble_outline,
+                                      size: 13, color: AppColors.textMuted),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(d.name,
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            color: AppColors.textSecondary)),
+                                  ),
+                                ],
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (affectedChars.isNotEmpty) ...[
+              Text(
+                '${affectedChars.length} personagem${affectedChars.length == 1 ? '' : 'ns'} está${affectedChars.length == 1 ? '' : 'o'} nesta área:',
+              ),
+              const SizedBox(height: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 100),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: affectedChars
+                        .map((c) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.person_outline,
+                                      size: 13, color: AppColors.textMuted),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(c.name,
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            color: AppColors.textSecondary)),
+                                  ),
+                                ],
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            const Text(
+              'Escolhe como remover:',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dlgCtx),
               child: const Text('Cancelar')),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+          if (affectedDialogues.isNotEmpty)
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(foregroundColor: AppColors.warning),
+              onPressed: () {
+                Navigator.pop(dlgCtx);
+                _confirmSmartDeleteArea(ctx, area, affectedDialogues.length);
+              },
+              child: const Text('Limpar referências'),
+            ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () {
+              Navigator.pop(dlgCtx);
+              _confirmBruteDeleteArea(ctx, area, affectedDialogues.length, affectedChars.length);
+            },
+            child: const Text('Eliminar tudo'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmSmartDeleteArea(BuildContext ctx, Area area, int dialogueCount) {
+    showDialog<void>(
+      context: ctx,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Confirmar remoção'),
+        content: Text(
+          'Remove a área "${area.name}" e limpa a referência em $dialogueCount diálogo${dialogueCount == 1 ? '' : 's'}.\n\nOs diálogos ficam intactos.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.warning),
+            onPressed: () {
+              widget.editor.removeAreaFromDialogues(area.id);
               widget.editor.removeArea(area.id);
               Navigator.pop(dlgCtx);
             },
-            child: const Text('Remover'),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmBruteDeleteArea(
+      BuildContext ctx, Area area, int dialogueCount, int charCount) {
+    final parts = <String>[];
+    if (dialogueCount > 0) {
+      parts.add('$dialogueCount diálogo${dialogueCount == 1 ? '' : 's'}');
+    }
+    if (charCount > 0) {
+      parts.add('$charCount personagem${charCount == 1 ? '' : 'ns'} ficam sem área');
+    }
+    final detail = parts.join(' e ');
+
+    showDialog<void>(
+      context: ctx,
+      builder: (dlgCtx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.delete_forever, color: AppColors.error, size: 22),
+            const SizedBox(width: 8),
+            const Text('Eliminar tudo'),
+          ],
+        ),
+        content: Text(
+          'Elimina a área "${area.name}" e $detail.\n\nEsta ação é irreversível.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () {
+              widget.editor.removeAreaBrute(area.id);
+              Navigator.pop(dlgCtx);
+            },
+            child: const Text('Eliminar tudo'),
           ),
         ],
       ),

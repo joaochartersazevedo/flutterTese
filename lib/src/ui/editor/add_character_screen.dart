@@ -167,14 +167,14 @@ class _AddCharacterScreenState extends State<AddCharacterScreen> {
               const SizedBox(height: 24),
               ImagePickerField(
                 label: 'Retrato (portrait)',
-                subdirectory: 'editor/portraits',
+                subdirectory: 'portraits',
                 initialPath: _portraitPath,
                 onChanged: (path) => setState(() => _portraitPath = path),
               ),
               const SizedBox(height: 24),
               ImagePickerField(
                 label: 'Sprite corpo',
-                subdirectory: 'editor/bodies',
+                subdirectory: 'bodies',
                 initialPath: _bodyPath,
                 onChanged: (path) => setState(() => _bodyPath = path),
               ),

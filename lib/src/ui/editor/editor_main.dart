@@ -163,7 +163,7 @@ class _StateFlagTab extends StatelessWidget {
         );
         if (result != null) editor.updateStateFlag(result);
       },
-      onDelete: (s) => editor.removeStateFlag(s.id),
+      onDelete: (s) => _confirmDeleteStateFlag(context, editor, s),
     );
   }
 }
@@ -588,6 +588,82 @@ class _EventTab extends StatelessWidget {
 }
 
 // ---------- Shared helpers ----------
+
+void _confirmDeleteStateFlag(
+    BuildContext context, BlueprintEditor editor, StateFlag flag) {
+  final affected = editor.dialoguesForStateFlag(flag.id);
+  showDialog<void>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: affected.isEmpty
+          ? const Text('Eliminar gamestate?')
+          : Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: AppColors.warning, size: 22),
+                const SizedBox(width: 8),
+                const Text('Eliminar gamestate?'),
+              ],
+            ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Eliminar "${flag.name}"?'),
+          if (affected.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Esta flag é usada em ${affected.length} diálogo${affected.length == 1 ? '' : 's'} (precondições/consequências). Será removida de todos automaticamente.',
+              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 150),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: affected
+                      .map((d) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.chat_bubble_outline,
+                                    size: 13, color: AppColors.textMuted),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(d.name,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.textSecondary)),
+                                ),
+                              ],
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+              backgroundColor: affected.isEmpty ? null : AppColors.warning),
+          onPressed: () {
+            Navigator.pop(context);
+            editor.removeStateFlagClean(flag.id);
+          },
+          child: const Text('Eliminar'),
+        ),
+      ],
+    ),
+  );
+}
 
 void _confirmDelete(BuildContext context, String name, VoidCallback onConfirm) {
   showDialog<void>(

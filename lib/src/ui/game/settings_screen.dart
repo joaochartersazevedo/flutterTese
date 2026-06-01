@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../../data/app_preferences.dart';
 import '../../data/dialogue_ai_service.dart';
+import '../../data/renpy_asset_resolver.dart';
 import '../app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -17,7 +19,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _apiKey;
-  late final TextEditingController _imagesRoot;
+  late final TextEditingController _assetsRoot;
   late final TextEditingController _ollamaHost;
   late final TextEditingController _ollamaModel;
   bool _keyVisible = false;
@@ -30,7 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _apiKey = TextEditingController(text: AppPreferences.apiKey);
-    _imagesRoot = TextEditingController(text: AppPreferences.imagesRoot);
+    _assetsRoot = TextEditingController(text: AppPreferences.assetsRoot);
     _ollamaHost = TextEditingController(text: AppPreferences.ollamaHost);
     _ollamaModel = TextEditingController(text: AppPreferences.ollamaModel);
     _ollamaEnabled = AppPreferences.ollamaEnabled;
@@ -39,7 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _apiKey.dispose();
-    _imagesRoot.dispose();
+    _assetsRoot.dispose();
     _ollamaHost.dispose();
     _ollamaModel.dispose();
     super.dispose();
@@ -47,10 +49,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _save() {
     final key = _apiKey.text.trim();
-    final root = _imagesRoot.text.trim();
+    final root = _assetsRoot.text.trim();
 
     AppPreferences.setApiKey(key);
-    AppPreferences.setImagesRoot(root);
+    AppPreferences.setAssetsRoot(root);
     AppPreferences.setOllamaEnabled(_ollamaEnabled);
     AppPreferences.setOllamaHost(_ollamaHost.text.trim());
     AppPreferences.setOllamaModel(_ollamaModel.text.trim());
@@ -60,6 +62,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Definições guardadas.')),
     );
+  }
+
+  void _autoDetectAssetsRoot() {
+    final candidate = RenpyAssetResolver.defaultCandidate();
+    if (Directory(candidate).existsSync()) {
+      setState(() {
+        _assetsRoot.text = candidate;
+        _saved = false;
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Pasta não encontrada: $candidate'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   Future<void> _testOllama() async {
@@ -92,8 +111,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   bool _rootValid() {
-    final root = _imagesRoot.text.trim();
-    return root.isEmpty || Directory(root).existsSync();
+    final root = _assetsRoot.text.trim();
+    if (root.isEmpty) return true;
+    if (!Directory(root).existsSync()) return false;
+    // Check expected subfolders
+    return Directory('$root/areas').existsSync() ||
+        Directory('$root/portraits').existsSync() ||
+        Directory('$root/bodies').existsSync();
+  }
+
+  int _assetCount() {
+    final root = _assetsRoot.text.trim();
+    if (root.isEmpty || !Directory(root).existsSync()) return 0;
+    int count = 0;
+    for (final sub in ['areas', 'portraits', 'bodies']) {
+      final dir = Directory('$root/$sub');
+      if (dir.existsSync()) {
+        count += dir.listSync().whereType<File>().length;
+      }
+    }
+    return count;
   }
 
   @override
@@ -140,40 +177,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const SizedBox(height: 32),
 
-              // ── Images root ──────────────────────────────────────────────
+              // ── Assets root ──────────────────────────────────────────────
               _SectionHeader(
                 icon: Icons.folder_outlined,
-                title: 'Pasta de imagens',
+                title: 'Pasta de assets',
                 subtitle:
-                    'Caminho absoluto para a pasta images/ do projeto Ren\'Py. '
-                    'Exemplo: /home/user/Tese/game/images',
+                    'Caminho para a pasta de imagens do jogo. '
+                    'Deve conter as subpastas areas/, portraits/ e bodies/.',
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: _imagesRoot,
+                controller: _assetsRoot,
                 onChanged: (_) => setState(() => _saved = false),
                 decoration: InputDecoration(
-                  labelText: 'Caminho da pasta images/',
-                  hintText: '/caminho/para/Tese/game/images',
-                  errorText: _imagesRoot.text.isNotEmpty && !_rootValid()
-                      ? 'Pasta não encontrada'
+                  labelText: 'Caminho da pasta de assets',
+                  hintText: RenpyAssetResolver.defaultCandidate(),
+                  errorText: _assetsRoot.text.isNotEmpty && !_rootValid()
+                      ? 'Pasta não encontrada ou sem subpastas esperadas'
                       : null,
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.copy_outlined, size: 16),
+                    tooltip: 'Copiar caminho',
+                    onPressed: _assetsRoot.text.isNotEmpty
+                        ? () => Clipboard.setData(
+                            ClipboardData(text: _assetsRoot.text.trim()))
+                        : null,
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              if (_imagesRoot.text.isNotEmpty && _rootValid())
-                Row(
-                  children: [
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _autoDetectAssetsRoot,
+                    icon: const Icon(Icons.search_outlined, size: 15),
+                    label: const Text('Auto-detetar', style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                      side: const BorderSide(color: AppColors.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  if (_assetsRoot.text.isNotEmpty && _rootValid()) ...[
                     const Icon(Icons.check_circle_outline,
                         size: 14, color: AppColors.teal),
                     const SizedBox(width: 6),
                     Text(
-                      'Pasta encontrada',
-                      style: const TextStyle(
-                          color: AppColors.teal, fontSize: 12),
+                      'Encontrada · ${_assetCount()} ficheiros',
+                      style: const TextStyle(color: AppColors.teal, fontSize: 12),
+                    ),
+                  ] else if (_assetsRoot.text.isEmpty) ...[
+                    const Icon(Icons.info_outline,
+                        size: 14, color: AppColors.textMuted),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Sugestão: ${RenpyAssetResolver.defaultCandidate()}',
+                        style: const TextStyle(
+                            color: AppColors.textMuted, fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
-                ),
+                ],
+              ),
 
               const SizedBox(height: 32),
 
@@ -273,7 +341,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ── Info ─────────────────────────────────────────────────────
               Text(
                 'As definições são guardadas em tese_prefs.json na pasta do programa. '
-                'Sem chave API os diálogos devem ser criados manualmente no editor.',
+                'Sem chave API os diálogos devem ser criados manualmente no editor. '
+                'A pasta de assets deve conter areas/, portraits/ e bodies/.',
                 style: const TextStyle(
                     color: AppColors.textMuted, fontSize: 11, height: 1.6),
               ),
