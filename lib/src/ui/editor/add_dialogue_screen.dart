@@ -473,77 +473,147 @@ class _MetaPanelState extends State<_MetaPanel> {
   void _notify() =>
       widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons, _groupId);
 
+  void _addFlagCondition(Map<int, bool> map, bool defaultVal) {
+    final available = widget.flags.where((f) => !map.containsKey(f.id)).toList();
+    if (available.isEmpty) return;
+    showDialog<int>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Escolher flag'),
+        children: available
+            .map((f) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, f.id),
+                  child: Text(f.name),
+                ))
+            .toList(),
+      ),
+    ).then((id) {
+      if (id == null) return;
+      setState(() => map[id] = defaultVal);
+      _notify();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       children: [
-        _sectionLabel('Nome'),
+        // ── Name ────────────────────────────────────────────────────────────
+        _SectionHeader(icon: Icons.title_outlined, label: 'Nome'),
         TextField(
           controller: widget.nameCtrl,
           decoration: const InputDecoration(hintText: 'Nome do diálogo'),
         ),
         const SizedBox(height: 16),
 
-        _sectionLabel('Personagens'),
+        // ── Characters ──────────────────────────────────────────────────────
+        _SectionHeader(icon: Icons.people_outline, label: 'Personagens'),
         if (widget.chars.isEmpty)
-          const Text(
-            'Sem personagens',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 4),
+            child: Text(
+              'Sem personagens',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
           )
         else
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          Column(
             children: widget.chars.map((c) {
-              final sel = _charIds.contains(c.id);
-              return FilterChip(
-                label: Text(c.name, style: const TextStyle(fontSize: 12)),
-                selected: sel,
-                onSelected: (v) {
+              final inDialogue = _charIds.contains(c.id);
+              final isActiveSpeaker = widget.activeSpeakerId == c.id;
+              final charColor = _hex(c.colorHex);
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
                   setState(() {
-                    if (v) {
-                      _charIds.add(c.id);
-                    } else {
+                    if (inDialogue) {
                       _charIds.remove(c.id);
+                    } else {
+                      _charIds.add(c.id);
                     }
                   });
                   _notify();
                 },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: inDialogue
+                        ? charColor.withValues(alpha: 0.08)
+                        : AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: inDialogue ? charColor.withValues(alpha: 0.35) : AppColors.border,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: charColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          c.name,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: inDialogue
+                                ? AppColors.textPrimary
+                                : AppColors.textMuted,
+                            fontWeight: inDialogue
+                                ? FontWeight.w500
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                      // Active speaker toggle
+                      Tooltip(
+                        message: isActiveSpeaker
+                            ? 'Narrador ativo'
+                            : 'Definir como narrador',
+                        child: GestureDetector(
+                          onTap: () => widget.onActiveSpeakerChanged(c.id),
+                          child: Icon(
+                            isActiveSpeaker
+                                ? Icons.mic
+                                : Icons.mic_none_outlined,
+                            size: 15,
+                            color: isActiveSpeaker
+                                ? AppColors.accent
+                                : AppColors.textMuted,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        inDialogue
+                            ? Icons.check_box_outlined
+                            : Icons.check_box_outline_blank,
+                        size: 15,
+                        color: inDialogue ? charColor : AppColors.textMuted,
+                      ),
+                    ],
+                  ),
+                ),
               );
             }).toList(),
           ),
         const SizedBox(height: 16),
 
-        _sectionLabel('Narrador ativo'),
-        const Text(
-          'Clica para definir o narrador padrão de novas falas.',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 11),
-        ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: widget.chars.map((c) {
-            final active = widget.activeSpeakerId == c.id;
-            return ChoiceChip(
-              label: Text(c.name, style: const TextStyle(fontSize: 12)),
-              selected: active,
-              onSelected: (_) => widget.onActiveSpeakerChanged(c.id),
-              selectedColor: AppColors.primaryDim,
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 16),
-
+        // ── Group ────────────────────────────────────────────────────────────
         if (widget.groups.isNotEmpty) ...[
-          _sectionLabel('Grupo'),
+          _SectionHeader(icon: Icons.account_tree_outlined, label: 'Grupo'),
           DropdownButtonFormField<int?>(
             value: _groupId,
             decoration: const InputDecoration(
               hintText: 'Sem grupo',
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
             items: [
               const DropdownMenuItem<int?>(
@@ -565,166 +635,364 @@ class _MetaPanelState extends State<_MetaPanel> {
           const SizedBox(height: 16),
         ],
 
-        _sectionLabel('Opções'),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Disparo único', style: TextStyle(fontSize: 13)),
-          value: _st,
-          onChanged: (v) {
-            setState(() => _st = v);
-            _notify();
-          },
-        ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Remover após disparar',
-            style: TextStyle(fontSize: 13),
-          ),
-          value: _sr,
-          onChanged: (v) {
-            setState(() => _sr = v);
-            _notify();
-          },
-        ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Diálogo de fim', style: TextStyle(fontSize: 13)),
-          subtitle: const Text(
-            'Termina o jogo ao concluir',
-            style: TextStyle(fontSize: 11),
-          ),
-          value: _ending,
-          onChanged: (v) {
-            setState(() => _ending = v);
-            _notify();
-          },
-        ),
-        const SizedBox(height: 12),
-
-        _sectionLabel('Prioridade'),
-        Row(
-          children: [
-            Expanded(
-              child: Slider(
-                value: _prio.toDouble(),
-                min: 0,
-                max: 10,
-                divisions: 10,
-                label: '$_prio',
-                onChanged: (v) {
-                  setState(() => _prio = v.round());
-                  _notify();
-                },
+        // ── Options (collapsible) ────────────────────────────────────────────
+        _CollapsibleSection(
+          icon: Icons.tune_outlined,
+          label: 'Opções',
+          badge: [if (_st) 'único', if (_sr) 'auto-remove', if (_ending) 'fim', if (_prio > 0) 'P$_prio']
+              .join(' · '),
+          child: Column(
+            children: [
+              _OptionRow(
+                label: 'Disparo único',
+                value: _st,
+                onChanged: (v) { setState(() => _st = v); _notify(); },
               ),
-            ),
-            SizedBox(
-              width: 28,
-              child: Text('$_prio', style: const TextStyle(fontSize: 13)),
-            ),
-          ],
+              _OptionRow(
+                label: 'Remover após disparar',
+                value: _sr,
+                onChanged: (v) { setState(() => _sr = v); _notify(); },
+              ),
+              _OptionRow(
+                label: 'Diálogo de fim',
+                subtitle: 'Termina o jogo ao concluir',
+                value: _ending,
+                onChanged: (v) { setState(() => _ending = v); _notify(); },
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Text(
+                    'Prioridade',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _prio.toDouble(),
+                      min: 0,
+                      max: 10,
+                      divisions: 10,
+                      label: '$_prio',
+                      onChanged: (v) {
+                        setState(() => _prio = v.round());
+                        _notify();
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 24,
+                    child: Text(
+                      '$_prio',
+                      style: const TextStyle(fontSize: 12),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
 
+        // ── Preconditions ────────────────────────────────────────────────────
         if (widget.flags.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _sectionLabel('Pré-condições'),
-          ...widget.flags.map(
-            (f) => _FlagRow(
-              name: f.name,
-              value: _pre[f.id],
-              onChanged: (v) {
-                setState(() {
-                  if (v == null) {
-                    _pre.remove(f.id);
-                  } else {
-                    _pre[f.id] = v;
-                  }
-                });
+          const SizedBox(height: 12),
+          _CollapsibleSection(
+            icon: Icons.lock_outline,
+            label: 'Pré-condições',
+            badge: _pre.isEmpty ? '' : '${_pre.length}',
+            badgeColor: AppColors.warning,
+            child: _FlagChipEditor(
+              flags: widget.flags,
+              values: _pre,
+              emptyHint: 'Sem condições — dispara sempre',
+              onAdd: () => _addFlagCondition(_pre, true),
+              onRemove: (id) {
+                setState(() => _pre.remove(id));
+                _notify();
+              },
+              onToggle: (id, v) {
+                setState(() => _pre[id] = v);
                 _notify();
               },
             ),
           ),
-          const SizedBox(height: 16),
-          _sectionLabel('Consequências'),
-          ...widget.flags.map(
-            (f) => _FlagRow(
-              name: f.name,
-              value: _cons[f.id],
-              onChanged: (v) {
-                setState(() {
-                  if (v == null) {
-                    _cons.remove(f.id);
-                  } else {
-                    _cons[f.id] = v;
-                  }
-                });
+          const SizedBox(height: 12),
+          _CollapsibleSection(
+            icon: Icons.output_outlined,
+            label: 'Consequências',
+            badge: _cons.isEmpty ? '' : '${_cons.length}',
+            badgeColor: AppColors.success,
+            child: _FlagChipEditor(
+              flags: widget.flags,
+              values: _cons,
+              emptyHint: 'Sem consequências',
+              onAdd: () => _addFlagCondition(_cons, true),
+              onRemove: (id) {
+                setState(() => _cons.remove(id));
+                _notify();
+              },
+              onToggle: (id, v) {
+                setState(() => _cons[id] = v);
                 _notify();
               },
             ),
           ),
         ],
+        const SizedBox(height: 16),
       ],
     );
   }
-
-  Widget _sectionLabel(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      text.toUpperCase(),
-      style: const TextStyle(
-        color: AppColors.textSecondary,
-        fontSize: 10,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.9,
-      ),
-    ),
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FLAG ROW  (tri-state toggle: null = any, true = must-be-true, false = must-be-false)
+// META PANEL HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _FlagRow extends StatelessWidget {
-  const _FlagRow({
-    required this.name,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String name;
-  final bool? value;
-  final void Function(bool?) onChanged;
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Expanded(child: Text(name, style: const TextStyle(fontSize: 12))),
-          ToggleButtons(
-            isSelected: [value == true, value == null, value == false],
-            onPressed: (i) => onChanged(
-              i == 0
-                  ? true
-                  : i == 2
-                  ? false
-                  : null,
+          Icon(icon, size: 13, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.9,
             ),
-            borderRadius: BorderRadius.circular(6),
-            constraints: const BoxConstraints(minHeight: 28, minWidth: 36),
-            children: const [
-              Icon(Icons.check, size: 13, color: Colors.green),
-              Icon(Icons.remove, size: 13),
-              Icon(Icons.close, size: 13, color: Colors.red),
-            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CollapsibleSection extends StatefulWidget {
+  const _CollapsibleSection({
+    required this.icon,
+    required this.label,
+    required this.child,
+    this.badge = '',
+    this.badgeColor,
+    this.initiallyExpanded = true,
+  });
+  final IconData icon;
+  final String label;
+  final Widget child;
+  final String badge;
+  final Color? badgeColor;
+  final bool initiallyExpanded;
+
+  @override
+  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
+}
+
+class _CollapsibleSectionState extends State<_CollapsibleSection> {
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.initiallyExpanded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Icon(widget.icon, size: 13, color: AppColors.textSecondary),
+                const SizedBox(width: 6),
+                Text(
+                  widget.label.toUpperCase(),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.9,
+                  ),
+                ),
+                if (widget.badge.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: (widget.badgeColor ?? AppColors.primary).withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      widget.badge,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: widget.badgeColor ?? AppColors.primaryLight,
+                      ),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 14,
+                  color: AppColors.textMuted,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded) ...[
+          const SizedBox(height: 6),
+          widget.child,
+        ],
+      ],
+    );
+  }
+}
+
+class _OptionRow extends StatelessWidget {
+  const _OptionRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+  });
+  final String label;
+  final String? subtitle;
+  final bool value;
+  final void Function(bool) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(label, style: const TextStyle(fontSize: 12)),
+      subtitle: subtitle != null
+          ? Text(subtitle!, style: const TextStyle(fontSize: 11))
+          : null,
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _FlagChipEditor extends StatelessWidget {
+  const _FlagChipEditor({
+    required this.flags,
+    required this.values,
+    required this.emptyHint,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onToggle,
+  });
+  final List<StateFlag> flags;
+  final Map<int, bool> values;
+  final String emptyHint;
+  final VoidCallback onAdd;
+  final void Function(int id) onRemove;
+  final void Function(int id, bool value) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = values.entries.toList();
+    final flagName = {for (final f in flags) f.id: f.name};
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (active.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              emptyHint,
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+            ),
+          )
+        else
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: active.map((e) {
+              final name = flagName[e.key] ?? 'Flag ${e.key}';
+              final isTrue = e.value;
+              return GestureDetector(
+                onTap: () => onToggle(e.key, !isTrue),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isTrue
+                        ? AppColors.success.withValues(alpha: 0.12)
+                        : AppColors.error.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isTrue
+                          ? AppColors.success.withValues(alpha: 0.4)
+                          : AppColors.error.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isTrue ? Icons.check : Icons.close,
+                        size: 11,
+                        color: isTrue ? AppColors.success : AppColors.error,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        name,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isTrue ? AppColors.success : AppColors.error,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: () => onRemove(e.key),
+                        child: Icon(
+                          Icons.close,
+                          size: 10,
+                          color: isTrue
+                              ? AppColors.success.withValues(alpha: 0.7)
+                              : AppColors.error.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        const SizedBox(height: 4),
+        if (values.length < flags.length)
+          TextButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add, size: 13),
+            label: const Text('Adicionar', style: TextStyle(fontSize: 11)),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.textSecondary,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+      ],
     );
   }
 }

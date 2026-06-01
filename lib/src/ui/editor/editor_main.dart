@@ -18,11 +18,13 @@ class EditorMain extends StatelessWidget {
     super.key,
     required this.editor,
     required this.onPlay,
+    this.onSaveWorld,
     this.onBack,
   });
 
   final BlueprintEditor editor;
   final VoidCallback onPlay;
+  final VoidCallback? onSaveWorld;
   final VoidCallback? onBack;
 
   static const _tabs = [
@@ -96,16 +98,25 @@ class EditorMain extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
+            if (onSaveWorld != null)
+              OutlinedButton.icon(
+                onPressed: onSaveWorld,
+                icon: const Icon(Icons.save_outlined, size: 16),
+                label: const Text('Guardar mundo'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  side: const BorderSide(color: AppColors.border),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+            const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: onPlay,
               icon: const Icon(Icons.play_arrow_rounded, size: 18),
               label: const Text('Jogar'),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.teal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
             ),
             const SizedBox(width: 16),

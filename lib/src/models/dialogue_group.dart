@@ -11,4 +11,16 @@ class DialogueGroup {
 
   DialogueGroup withOrder(List<int> ids) =>
       DialogueGroup(id: id, name: name, orderedDialogueIds: ids);
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'orderedDialogueIds': orderedDialogueIds,
+      };
+
+  factory DialogueGroup.fromJson(Map<String, dynamic> j) => DialogueGroup(
+        id: j['id'] as int,
+        name: j['name'] as String,
+        orderedDialogueIds: (j['orderedDialogueIds'] as List?)?.cast<int>() ?? [],
+      );
 }

@@ -32,4 +32,22 @@ class Area {
       dialogueId: clearDialogueId ? null : (dialogueId ?? this.dialogueId),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'backgroundPath': backgroundPath,
+        'connectionIds': connectionIds,
+        'locked': locked,
+        if (dialogueId != null) 'dialogueId': dialogueId,
+      };
+
+  factory Area.fromJson(Map<String, dynamic> j) => Area(
+        id: j['id'] as int,
+        name: j['name'] as String,
+        backgroundPath: j['backgroundPath'] as String,
+        connectionIds: (j['connectionIds'] as List).cast<int>(),
+        locked: j['locked'] as bool? ?? false,
+        dialogueId: j['dialogueId'] as int?,
+      );
 }

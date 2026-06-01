@@ -63,4 +63,28 @@ class Connection {
       hotspotBy: clearHotspotB ? null : (hotspotBy ?? this.hotspotBy),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'areaA': areaA,
+        'areaB': areaB,
+        'locked': locked,
+        'label': label,
+        if (hotspotAx != null) 'hotspotAx': hotspotAx,
+        if (hotspotAy != null) 'hotspotAy': hotspotAy,
+        if (hotspotBx != null) 'hotspotBx': hotspotBx,
+        if (hotspotBy != null) 'hotspotBy': hotspotBy,
+      };
+
+  factory Connection.fromJson(Map<String, dynamic> j) => Connection(
+        id: j['id'] as int,
+        areaA: j['areaA'] as int,
+        areaB: j['areaB'] as int,
+        locked: j['locked'] as bool? ?? false,
+        label: j['label'] as String? ?? '',
+        hotspotAx: (j['hotspotAx'] as num?)?.toDouble(),
+        hotspotAy: (j['hotspotAy'] as num?)?.toDouble(),
+        hotspotBx: (j['hotspotBx'] as num?)?.toDouble(),
+        hotspotBy: (j['hotspotBy'] as num?)?.toDouble(),
+      );
 }

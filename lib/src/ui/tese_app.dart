@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/app_preferences.dart';
 import '../data/dialogue_ai_service.dart';
 import '../data/save_file_service.dart';
-import '../data/seed_world.dart';
+import '../data/world_blueprint_service.dart';
 import '../domain/blueprint_editor.dart';
 import '../logic/game_engine.dart';
 import '../models/save_data.dart';
@@ -39,6 +39,7 @@ class _AppShellState extends State<AppShell> {
   SaveData? _currentSave;
   bool _inGame = false;
   bool _showingSaveSelection = true;
+  bool _worldLoaded = false;
 
   // Auto-save tracking
   int? _lastAutoSaveAreaId;
@@ -52,26 +53,20 @@ class _AppShellState extends State<AppShell> {
       DialogueAiService.instance.setApiKey(savedKey);
     }
     _editor = BlueprintEditor();
-    _editor.loadBlueprint(buildSeedWorld());
-    _ensureSeedSaveExists();
+    _loadWorld();
   }
 
-  static const _seedSaveName = 'Mundo Inicial';
+  Future<void> _loadWorld() async {
+    final bp = await WorldBlueprintService.load();
+    if (bp != null) {
+      _editor.loadBlueprint(bp);
+    }
+    // If no world.json, editor starts with empty default blueprint
+    setState(() => _worldLoaded = true);
+  }
 
-  Future<void> _ensureSeedSaveExists() async {
-    if (await SaveFileService.saveExists(_seedSaveName)) return;
-    final seed = buildSeedWorld();
-    final save = SaveData(
-      saveName: _seedSaveName,
-      timestamp: DateTime.now(),
-      currentAreaId: seed.startingAreaId,
-      elapsedMinutes: 0,
-      minutesSincePopulate: 0,
-      log: [],
-      gameFlags: {},
-      characterPositions: {},
-    );
-    await SaveFileService.saveSave(save);
+  Future<void> _saveWorld() async {
+    await WorldBlueprintService.save(_editor.build());
   }
 
   @override
@@ -88,8 +83,7 @@ class _AppShellState extends State<AppShell> {
     if (_currentSave == null || _engine == null || !_inGame) return;
     final areaId = _engine!.currentArea.id;
     if (_lastAutoSaveAreaId != null && areaId != _lastAutoSaveAreaId) {
-      SaveFileService.saveSave(
-          _engine!.saveState(_currentSave!.saveName));
+      SaveFileService.saveSave(_engine!.saveState(_currentSave!.saveName));
     }
     _lastAutoSaveAreaId = areaId;
   }
@@ -107,7 +101,7 @@ class _AppShellState extends State<AppShell> {
 
   // ── Game launch ───────────────────────────────────────────────────────────
 
-  void _launchGame() {
+  Future<void> _launchGame() async {
     final bp = _editor.build();
     if (bp.areas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -115,6 +109,9 @@ class _AppShellState extends State<AppShell> {
       );
       return;
     }
+
+    // Persist world before launching
+    await _saveWorld();
 
     _engine?.removeListener(_onEngineChanged);
     setState(() {
@@ -151,16 +148,33 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  // ── Editor save world ─────────────────────────────────────────────────────
+
+  Future<void> _onEditorSaveWorld() async {
+    await _saveWorld();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mundo guardado.')),
+      );
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    if (!_worldLoaded) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (_showingSaveSelection) {
       return Scaffold(
         body: SaveSelectionScreen(
-        onSaveSelected: _onSaveSelected,
-        startingAreaId: _editor.startingAreaId,
-      ),
+          onSaveSelected: _onSaveSelected,
+          startingAreaId: _editor.startingAreaId,
+        ),
       );
     }
 
@@ -177,6 +191,7 @@ class _AppShellState extends State<AppShell> {
       builder: (context, _) => EditorMain(
         editor: _editor,
         onPlay: _launchGame,
+        onSaveWorld: _onEditorSaveWorld,
         onBack: () => setState(() => _showingSaveSelection = true),
       ),
     );

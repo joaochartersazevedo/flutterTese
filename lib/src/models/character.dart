@@ -42,4 +42,31 @@ class Character {
       relationships: relationships ?? this.relationships,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'colorHex': colorHex,
+        'portraitPath': portraitPath,
+        'areaId': areaId,
+        'bodyPath': bodyPath,
+        if (personality.isNotEmpty) 'personality': personality,
+        if (relationships.isNotEmpty)
+          'relationships': relationships.map((k, v) => MapEntry(k.toString(), v)),
+      };
+
+  factory Character.fromJson(Map<String, dynamic> j) => Character(
+        id: j['id'] as int,
+        name: j['name'] as String,
+        colorHex: j['colorHex'] as String,
+        portraitPath: j['portraitPath'] as String,
+        areaId: j['areaId'] as int,
+        bodyPath: j['bodyPath'] as String,
+        personality: (j['personality'] as Map<String, dynamic>?)
+                ?.map((k, v) => MapEntry(k, v as int)) ??
+            {},
+        relationships: (j['relationships'] as Map<String, dynamic>?)
+                ?.map((k, v) => MapEntry(int.parse(k), v as String)) ??
+            {},
+      );
 }
