@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../data/renpy_asset_resolver.dart';
+import '../../data/testing_checklist.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/character.dart';
 import '../app_theme.dart';
@@ -177,6 +178,7 @@ class _CharacterRelationshipScreenState
           a.copyWith(relationships: Map.of(a.relationships)..[idB] = label))
       ..updateCharacter(
           b.copyWith(relationships: Map.of(b.relationships)..[idA] = label));
+    TestingChecklist.instance.mark('set_relationship');
   }
 
   void _clearRelationship(int idA, int idB) {
@@ -212,7 +214,10 @@ class _CharacterRelationshipScreenState
       MaterialPageRoute(
           builder: (_) => AddCharacterScreen(editor: widget.editor)),
     );
-    if (result != null) widget.editor.addCharacter(result);
+    if (result != null) {
+      widget.editor.addCharacter(result);
+      TestingChecklist.instance.mark('create_character');
+    }
   }
 
   Future<void> _editCharacter(Character char) async {
@@ -222,7 +227,10 @@ class _CharacterRelationshipScreenState
           builder: (_) =>
               AddCharacterScreen(editor: widget.editor, existing: char)),
     );
-    if (result != null) widget.editor.updateCharacter(result);
+    if (result != null) {
+      widget.editor.updateCharacter(result);
+      TestingChecklist.instance.mark('edit_character');
+    }
   }
 
   void _deleteCharacter(BuildContext ctx, Character char) {
@@ -242,6 +250,7 @@ class _CharacterRelationshipScreenState
               style: FilledButton.styleFrom(backgroundColor: AppColors.error),
               onPressed: () {
                 widget.editor.removeCharacter(char.id);
+                TestingChecklist.instance.mark('delete_entity');
                 Navigator.pop(dlgCtx);
               },
               child: const Text('Remover'),
@@ -346,6 +355,7 @@ class _CharacterRelationshipScreenState
             onPressed: () {
               widget.editor.removeCharacterFromDialogues(char.id);
               widget.editor.removeCharacter(char.id);
+              TestingChecklist.instance.mark('delete_entity');
               Navigator.pop(dlgCtx);
             },
             child: const Text('Confirmar'),
@@ -377,6 +387,7 @@ class _CharacterRelationshipScreenState
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () {
               widget.editor.removeCharacterBrute(char.id);
+              TestingChecklist.instance.mark('delete_entity');
               Navigator.pop(dlgCtx);
             },
             child: const Text('Eliminar tudo'),

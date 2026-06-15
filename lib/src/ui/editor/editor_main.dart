@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/testing_checklist.dart';
 import '../../domain/blueprint_editor.dart';
 import '../app_theme.dart';
 import '../game/settings_screen.dart';
@@ -18,13 +19,13 @@ class EditorMain extends StatelessWidget {
     super.key,
     required this.editor,
     required this.onPlay,
-    this.onSaveWorld,
+    this.onSave,
     this.onBack,
   });
 
   final BlueprintEditor editor;
   final VoidCallback onPlay;
-  final VoidCallback? onSaveWorld;
+  final VoidCallback? onSave;
   final VoidCallback? onBack;
 
   static const _tabs = [
@@ -98,11 +99,11 @@ class EditorMain extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            if (onSaveWorld != null)
+            if (onSave != null)
               OutlinedButton.icon(
-                onPressed: onSaveWorld,
+                onPressed: onSave,
                 icon: const Icon(Icons.save_outlined, size: 16),
-                label: const Text('Guardar mundo'),
+                label: const Text('Guardar'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.textSecondary,
                   side: const BorderSide(color: AppColors.border),
@@ -163,7 +164,10 @@ class _StateFlagTab extends StatelessWidget {
           context,
           MaterialPageRoute(builder: (_) => AddStateFlagScreen(editor: editor)),
         );
-        if (result != null) editor.addStateFlag(result);
+        if (result != null) {
+          editor.addStateFlag(result);
+          TestingChecklist.instance.mark('create_gamestate');
+        }
       },
       onEdit: (s) async {
         final result = await Navigator.push<StateFlag>(
@@ -215,13 +219,18 @@ class _DialogueTabState extends State<_DialogueTab> {
     if (result == null) return;
     if (existing != null) {
       widget.editor.updateDialogue(result);
+      TestingChecklist.instance.mark('edit_dialogue');
     } else {
       widget.editor.addDialogue(result);
+      TestingChecklist.instance.mark('create_dialogue');
     }
   }
 
   void _delete(Dialogue d) {
-    _confirmDelete(context, d.name, () => widget.editor.removeDialogue(d.id));
+    _confirmDelete(context, d.name, () {
+      widget.editor.removeDialogue(d.id);
+      TestingChecklist.instance.mark('delete_entity');
+    });
   }
 
   @override
@@ -600,7 +609,10 @@ class _EventTab extends StatelessWidget {
           context,
           MaterialPageRoute(builder: (_) => AddEventScreen(editor: editor)),
         );
-        if (result != null) editor.addEvent(result);
+        if (result != null) {
+          editor.addEvent(result);
+          TestingChecklist.instance.mark('create_event');
+        }
       },
       onEdit: (e) async {
         final result = await Navigator.push<Event>(
@@ -612,9 +624,13 @@ class _EventTab extends StatelessWidget {
         if (result != null) {
           editor.removeEvent(e.id);
           editor.addEvent(result);
+          TestingChecklist.instance.mark('edit_event');
         }
       },
-      onDelete: (e) => editor.removeEvent(e.id),
+      onDelete: (e) {
+        editor.removeEvent(e.id);
+        TestingChecklist.instance.mark('delete_entity');
+      },
     );
   }
 }
@@ -689,6 +705,7 @@ void _confirmDeleteStateFlag(
           onPressed: () {
             Navigator.pop(context);
             editor.removeStateFlagClean(flag.id);
+            TestingChecklist.instance.mark('delete_entity');
           },
           child: const Text('Eliminar'),
         ),

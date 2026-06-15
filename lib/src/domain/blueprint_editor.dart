@@ -8,8 +8,8 @@ import '../models/connection.dart';
 import '../models/dialogue.dart';
 import '../models/dialogue_group.dart';
 import '../models/event.dart';
+import '../models/save_data.dart';
 import '../models/state_flag.dart';
-import '../models/world_blueprint.dart';
 
 class BlueprintEditor extends ChangeNotifier {
   BlueprintEditor() {
@@ -441,7 +441,21 @@ class BlueprintEditor extends ChangeNotifier {
 
   // ------ Build / Load ------
 
-  WorldBlueprint build() => WorldBlueprint(
+  /// Builds a full save from the current world definition. [saveName] and
+  /// the progress fields default to a fresh game; pass the previous save's
+  /// progress fields to keep them when re-saving an existing save.
+  SaveData build({
+    required String saveName,
+    DateTime? timestamp,
+    int elapsedMinutes = 0,
+    int minutesSincePopulate = 0,
+    List<String> log = const [],
+    Map<int, bool>? gameFlags,
+    Map<int, int>? characterPositions,
+  }) =>
+      SaveData(
+        saveName: saveName,
+        timestamp: timestamp ?? DateTime.now(),
         startingAreaId:
             areas.containsKey(startingAreaId) ? startingAreaId : (areas.keys.firstOrNull ?? 1),
         areas: Map.from(areas),
@@ -451,31 +465,40 @@ class BlueprintEditor extends ChangeNotifier {
         dialogues: Map.from(dialogues),
         events: Map.from(events),
         groups: Map.from(groups),
+        elapsedMinutes: elapsedMinutes,
+        minutesSincePopulate: minutesSincePopulate,
+        log: log,
+        gameFlags: gameFlags ?? {for (final g in gamestates.values) g.id: g.value},
+        characterPositions:
+            characterPositions ?? {for (final c in characters.values) c.id: c.areaId},
       );
 
-  void loadBlueprint(WorldBlueprint bp) {
+  /// Loads the world definition from [save] for editing. Progress fields
+  /// (gameFlags, characterPositions, log, ...) are not loaded into the
+  /// editor — they live only in the save file / game engine.
+  void loadSave(SaveData save) {
     areas
       ..clear()
-      ..addAll(bp.areas);
+      ..addAll(save.areas);
     connections
       ..clear()
-      ..addAll(bp.connections);
+      ..addAll(save.connections);
     characters
       ..clear()
-      ..addAll(bp.characters);
+      ..addAll(save.characters);
     gamestates
       ..clear()
-      ..addAll(bp.gamestates);
+      ..addAll(save.gamestates);
     dialogues
       ..clear()
-      ..addAll(bp.dialogues);
+      ..addAll(save.dialogues);
     events
       ..clear()
-      ..addAll(bp.events);
+      ..addAll(save.events);
     groups
       ..clear()
-      ..addAll(bp.groups);
-    startingAreaId = bp.startingAreaId;
+      ..addAll(save.groups);
+    startingAreaId = save.startingAreaId;
 
     int maxId(Iterable<int> keys) =>
         keys.isEmpty ? 0 : keys.reduce(math.max);

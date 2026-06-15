@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../../data/app_preferences.dart';
 import '../../data/dialogue_ai_service.dart';
 import '../../data/renpy_asset_resolver.dart';
+import '../../data/testing_checklist.dart';
 import '../app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -318,6 +319,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
               ],
+
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // ── Modo de teste ────────────────────────────────────────────
+              _SectionHeader(
+                icon: Icons.checklist_outlined,
+                title: 'Modo de teste',
+                subtitle:
+                    'Mostra um checklist flutuante com as ações a testar na '
+                    'aplicação (editor e jogo), marcadas automaticamente.',
+              ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Ativar checklist de testes'),
+                value: TestingChecklist.instance.enabled,
+                onChanged: (v) => setState(() => TestingChecklist.instance.enabled = v),
+              ),
+              if (TestingChecklist.instance.doneCount > 0)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => TestingChecklist.instance.reset()),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: Text(
+                      'Reiniciar progresso (${TestingChecklist.instance.doneCount}/${TestingChecklist.instance.totalCount})',
+                    ),
+                  ),
+                ),
 
               const SizedBox(height: 32),
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/testing_checklist.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/dialogue.dart';
 import '../../models/dialogue_group.dart';
@@ -20,6 +21,7 @@ class _DialogueGroupScreenState extends State<DialogueGroupScreen> {
     widget.editor.addGroup(
       DialogueGroup(id: widget.editor.nextGroupId(), name: name),
     );
+    TestingChecklist.instance.mark('create_dialogue_group');
   }
 
   void _editGroup(DialogueGroup g) async {

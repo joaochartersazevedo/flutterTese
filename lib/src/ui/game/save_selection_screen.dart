@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/save_file_service.dart';
+import '../../domain/blueprint_editor.dart';
 import '../../models/save_data.dart';
 import '../app_theme.dart';
 import 'settings_screen.dart';
@@ -9,10 +10,8 @@ class SaveSelectionScreen extends StatefulWidget {
   const SaveSelectionScreen({
     super.key,
     required this.onSaveSelected,
-    this.startingAreaId = 1,
   });
   final Future<void> Function(SaveData saveData) onSaveSelected;
-  final int startingAreaId;
 
   @override
   State<SaveSelectionScreen> createState() => _SaveSelectionScreenState();
@@ -60,12 +59,19 @@ class _SaveSelectionScreenState extends State<SaveSelectionScreen> {
     final save = SaveData(
       saveName: name,
       timestamp: DateTime.now(),
-      currentAreaId: widget.startingAreaId,
+      startingAreaId: 1,
+      areas: const {},
+      connections: const {},
+      characters: {BlueprintEditor.playerId: BlueprintEditor.defaultPlayer},
+      gamestates: const {},
+      dialogues: const {},
+      events: const {},
+      groups: const {},
       elapsedMinutes: 0,
       minutesSincePopulate: 0,
-      log: [],
-      gameFlags: {},
-      characterPositions: {},
+      log: const [],
+      gameFlags: const {},
+      characterPositions: const {},
     );
     await SaveFileService.saveSave(save);
     if (!mounted) return;

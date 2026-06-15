@@ -70,4 +70,19 @@ class AppPreferences {
     _data['ollamaModel'] = v;
     _persist();
   }
+
+  static bool get testingChecklistEnabled =>
+      (_data['testingChecklistEnabled'] as bool?) ?? false;
+  static void setTestingChecklistEnabled(bool v) {
+    _data['testingChecklistEnabled'] = v;
+    _persist();
+  }
+
+  static Set<String> get testingChecklistProgress => ((_data['testingChecklistProgress'] as List?) ?? [])
+      .cast<String>()
+      .toSet();
+  static void setTestingChecklistProgress(Set<String> ids) {
+    _data['testingChecklistProgress'] = ids.toList();
+    _persist();
+  }
 }

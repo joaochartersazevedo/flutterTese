@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/app_preferences.dart';
 import '../data/dialogue_ai_service.dart';
 import '../data/save_file_service.dart';
-import '../data/world_blueprint_service.dart';
+import '../data/testing_checklist.dart';
 import '../domain/blueprint_editor.dart';
 import '../logic/game_engine.dart';
 import '../models/save_data.dart';
@@ -11,6 +11,7 @@ import 'app_theme.dart';
 import 'editor/editor_main.dart';
 import 'game/game_main.dart';
 import 'game/save_selection_screen.dart';
+import 'widgets/testing_checklist_panel.dart';
 
 class TeseDesktopApp extends StatelessWidget {
   const TeseDesktopApp({super.key});
@@ -39,7 +40,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   SaveData? _currentSave;
   bool _inGame = false;
   bool _showingSaveSelection = true;
-  bool _worldLoaded = false;
 
   // Auto-save tracking
   int? _lastAutoSaveAreaId;
@@ -54,21 +54,19 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     _editor = BlueprintEditor();
     WidgetsBinding.instance.addObserver(this);
-    _loadWorld();
   }
 
-  Future<void> _loadWorld() async {
-    final bp = await WorldBlueprintService.load();
-    if (bp != null) {
-      _editor.loadBlueprint(bp);
-    }
-    // If no world.json, editor starts with empty default blueprint
-    setState(() => _worldLoaded = true);
-  }
-
-  Future<void> _saveWorld() async {
-    await WorldBlueprintService.save(_editor.build());
-  }
+  /// Builds a save from the editor's current world, carrying over
+  /// [_currentSave]'s progress (flags, NPC positions, log, elapsed time).
+  SaveData _buildCurrentSave() => _editor.build(
+        saveName: _currentSave!.saveName,
+        timestamp: _currentSave!.timestamp,
+        elapsedMinutes: _currentSave!.elapsedMinutes,
+        minutesSincePopulate: _currentSave!.minutesSincePopulate,
+        log: _currentSave!.log,
+        gameFlags: _currentSave!.gameFlags,
+        characterPositions: _currentSave!.characterPositions,
+      );
 
   @override
   void dispose() {
@@ -79,16 +77,20 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  // Player progress (flags, NPC positions, log, elapsed time) lives only in
+  // the running GameEngine — it is never written back to the save file, so
+  // closing the app or pressing Play always resets it to the save's
+  // baseline. Saves on disk only change when the editor explicitly saves
+  // world edits.
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.inactive) {
-      _saveWorld();
-      // Only save game state if not mid-dialogue (would lose dialogue progress)
-      if (_currentSave != null && _engine != null && !_engine!.isInDialogue) {
-        SaveFileService.saveSave(_engine!.saveState(_currentSave!.saveName));
-      }
+      if (_currentSave == null || _inGame) return;
+      _currentSave = _buildCurrentSave();
+      SaveFileService.saveSave(_currentSave!);
     }
   }
 
@@ -98,7 +100,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (_currentSave == null || _engine == null || !_inGame) return;
     final areaId = _engine!.currentArea.id;
     if (_lastAutoSaveAreaId != null && areaId != _lastAutoSaveAreaId) {
-      SaveFileService.saveSave(_engine!.saveState(_currentSave!.saveName));
+      TestingChecklist.instance.mark('save_game');
     }
     _lastAutoSaveAreaId = areaId;
   }
@@ -109,33 +111,31 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (mounted) {
       setState(() {
         _currentSave = save;
+        _editor.loadSave(save);
         _showingSaveSelection = false;
       });
+      TestingChecklist.instance.mark('select_save');
     }
   }
 
   // ── Game launch ───────────────────────────────────────────────────────────
 
   Future<void> _launchGame() async {
-    final bp = _editor.build();
-    if (bp.areas.isEmpty) {
+    if (_editor.areas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Adiciona pelo menos uma area primeiro.')),
       );
       return;
     }
 
-    // Persist world before launching
-    await _saveWorld();
+    final saveData = _buildCurrentSave();
+    await SaveFileService.saveSave(saveData);
 
     _engine?.removeListener(_onEngineChanged);
     setState(() {
+      _currentSave = saveData;
       _engine?.dispose();
-      _engine = GameEngine(bp);
-
-      if (_currentSave != null) {
-        _engine!.restoreState(_currentSave!);
-      }
+      _engine = GameEngine(saveData);
 
       _lastAutoSaveAreaId = _engine!.currentArea.id;
       _engine!.addListener(_onEngineChanged);
@@ -143,6 +143,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       _inGame = true;
       _showingSaveSelection = false;
     });
+    TestingChecklist.instance.mark('play_game');
   }
 
   // ── Return to editor ──────────────────────────────────────────────────────
@@ -150,27 +151,26 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Future<void> _returnToEditor() async {
     _engine?.removeListener(_onEngineChanged);
 
-    if (_currentSave != null && _engine != null) {
-      final updatedSave = _engine!.saveState(_currentSave!.saveName);
-      await SaveFileService.saveSave(updatedSave);
-    }
-
     if (mounted) {
       setState(() {
         _inGame = false;
         _showingSaveSelection = true;
       });
+      TestingChecklist.instance.mark('return_to_editor');
     }
   }
 
-  // ── Editor save world ─────────────────────────────────────────────────────
+  // ── Editor save ──────────────────────────────────────────────────────────
 
-  Future<void> _onEditorSaveWorld() async {
-    await _saveWorld();
+  Future<void> _onEditorSave() async {
+    final saveData = _buildCurrentSave();
+    await SaveFileService.saveSave(saveData);
     if (mounted) {
+      setState(() => _currentSave = saveData);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mundo guardado.')),
+        const SnackBar(content: Text('Guardado.')),
       );
+      TestingChecklist.instance.mark('save_world');
     }
   }
 
@@ -178,36 +178,33 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    if (!_worldLoaded) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
     if (_showingSaveSelection) {
       return Scaffold(
         body: SaveSelectionScreen(
           onSaveSelected: _onSaveSelected,
-          startingAreaId: _editor.startingAreaId,
         ),
       );
     }
 
     if (_inGame && _engine != null) {
-      return GameMain(
-        engine: _engine!,
-        currentSave: _currentSave,
-        onExit: _returnToEditor,
+      return TestingChecklistOverlay(
+        child: GameMain(
+          engine: _engine!,
+          currentSave: _currentSave,
+          onExit: _returnToEditor,
+        ),
       );
     }
 
-    return ListenableBuilder(
-      listenable: _editor,
-      builder: (context, _) => EditorMain(
-        editor: _editor,
-        onPlay: _launchGame,
-        onSaveWorld: _onEditorSaveWorld,
-        onBack: () => setState(() => _showingSaveSelection = true),
+    return TestingChecklistOverlay(
+      child: ListenableBuilder(
+        listenable: _editor,
+        builder: (context, _) => EditorMain(
+          editor: _editor,
+          onPlay: _launchGame,
+          onSave: _onEditorSave,
+          onBack: () => setState(() => _showingSaveSelection = true),
+        ),
       ),
     );
   }

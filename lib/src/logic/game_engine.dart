@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../data/renpy_asset_resolver.dart';
+import '../data/testing_checklist.dart';
 import '../models/area.dart';
 import '../models/character.dart';
 import '../models/connection.dart';
@@ -9,15 +10,17 @@ import '../models/dialogue.dart';
 import '../models/event.dart';
 import '../models/save_data.dart';
 import '../models/state_flag.dart';
-import '../models/world_blueprint.dart';
 
 class GameEngine extends ChangeNotifier {
-  GameEngine(this.blueprint, {RenpyAssetResolver? assetResolver})
+  GameEngine(this.save, {RenpyAssetResolver? assetResolver})
     : _assetResolver = assetResolver ?? RenpyAssetResolver.auto() {
     _resetRuntime();
   }
 
-  final WorldBlueprint blueprint;
+  /// The save this engine was created from (world definition + progress).
+  /// Player position is never read from here — it always starts at
+  /// [SaveData.startingAreaId].
+  final SaveData save;
   final RenpyAssetResolver _assetResolver;
 
   late List<Area> _areas;
@@ -219,6 +222,7 @@ class GameEngine extends ChangeNotifier {
     }
     _currentAreaId = destId;
     _logLine('Movimento: ${currentArea.name}.');
+    TestingChecklist.instance.mark('travel_connection');
     _tick(autoStart: true);
   }
 
@@ -246,6 +250,7 @@ class GameEngine extends ChangeNotifier {
     _conversationHistory.add((emotionId, playerLine));
     if (_conversationHistory.length > 4) _conversationHistory.removeAt(0);
 
+    TestingChecklist.instance.mark('select_emotion');
     final branchRoot = choiceNode.children?[emotionId] ?? choiceNode.nextNode;
     _currentNode = branchRoot;
     _stepCount++;
@@ -282,6 +287,7 @@ class GameEngine extends ChangeNotifier {
       _dialoguesPool.removeWhere((x) => x.id == d.id);
     }
     _logLine('Dialogo concluido: ${d.name}');
+    TestingChecklist.instance.mark('complete_dialogue');
     _currentDialogue = null;
     _currentNode = null;
     _stepCount = 0;
@@ -295,7 +301,7 @@ class GameEngine extends ChangeNotifier {
     // the first one whose preconditions are already met (skip unready ones).
     if (d.groupId != null) {
       _evaluateTriggers();
-      final group = blueprint.groups[d.groupId];
+      final group = save.groups[d.groupId];
       final orderedIds = group?.orderedDialogueIds ?? [];
       final currentIdx = orderedIds.indexOf(d.id);
       for (var i = currentIdx + 1; i < orderedIds.length; i++) {
@@ -331,33 +337,46 @@ class GameEngine extends ChangeNotifier {
   // ---------- RUNTIME ----------
 
   void _resetRuntime() {
-    _areas = blueprint.areas.values
+    _areas = save.areas.values
         .map(
           (a) => a.copyWith(
             connectionIds: List<int>.from(a.connectionIds),
           ),
         )
         .toList();
-    _connections = blueprint.connections.values
+    _connections = save.connections.values
         .map((c) => c.copyWith())
         .toList();
-    _characters = blueprint.characters.values.toList();
-    _gamestates = blueprint.gamestates.values.map((g) => g.copyWith()).toList();
-    _dialoguesPool = blueprint.dialogues.values.toList();
+    _characters = save.characters.values.toList();
+    _gamestates = save.gamestates.values.map((g) => g.copyWith()).toList();
+    _dialoguesPool = save.dialogues.values.toList();
     _activeDialogues = [];
-    _events = blueprint.events.values.toList();
+    _events = save.events.values.toList();
 
-    _currentAreaId = blueprint.startingAreaId;
-    _elapsedMinutes = 0;
-    _minutesSincePopulate = 0;
+    // Player position always resets to the starting area; other progress
+    // (flags, NPC positions, log, elapsed time) carries over from the save.
+    _currentAreaId = save.startingAreaId;
+    _elapsedMinutes = save.elapsedMinutes;
+    _minutesSincePopulate = save.minutesSincePopulate;
     _currentDialogue = null;
     _currentNode = null;
     _stepCount = 0;
     _gameOver = false;
     _conversationHistory.clear();
 
+    for (final e in save.gameFlags.entries) {
+      _setGameState(e.key, e.value);
+    }
+    for (final e in save.characterPositions.entries) {
+      final char = _char(e.key);
+      if (char != null) {
+        _replace(_characters, (c) => c.id == e.key, char.copyWith(areaId: e.value));
+      }
+    }
+
     _log
       ..clear()
+      ..addAll(save.log)
       ..add('Runtime iniciado em ${currentArea.name}.');
 
     _evaluateTriggers();
@@ -414,7 +433,7 @@ class GameEngine extends ChangeNotifier {
         if (!_conditionsMet(d.preconditions)) continue;
         // Non-entry group dialogues only activate after entry (index 0) is played.
         if (d.groupId != null) {
-          final order = blueprint.groups[d.groupId]?.orderedDialogueIds ?? [];
+          final order = save.groups[d.groupId]?.orderedDialogueIds ?? [];
           final idx = order.indexOf(d.id);
           if (idx > 0 && order.isNotEmpty) {
             final entryId = order.first;
@@ -454,6 +473,7 @@ class GameEngine extends ChangeNotifier {
             _logLine(
               'Area ${area.name} ${locked ? "bloqueada" : "desbloqueada"}.',
             );
+            TestingChecklist.instance.mark('trigger_event');
             changed = true;
           }
         }
@@ -463,6 +483,7 @@ class GameEngine extends ChangeNotifier {
         if (tArea != null) {
           _replace(_areas, (a) => a.id == tArea.id, tArea.copyWith(locked: !tArea.locked));
           _logLine('Area ${tArea.name} ${tArea.locked ? "desbloqueada" : "bloqueada"}.');
+          TestingChecklist.instance.mark('trigger_event');
           changed = true;
         }
         break;
@@ -474,6 +495,7 @@ class GameEngine extends ChangeNotifier {
           if (conn.locked != lock) {
             _replace(_connections, (c) => c.id == conn.id, conn.copyWith(locked: lock));
             _logLine('Ligação ${conn.label} ${lock ? "bloqueada" : "desbloqueada"}.');
+            TestingChecklist.instance.mark('trigger_event');
             changed = true;
           }
         }
@@ -483,6 +505,7 @@ class GameEngine extends ChangeNotifier {
         if (tConn != null) {
           _replace(_connections, (c) => c.id == tConn.id, tConn.copyWith(locked: !tConn.locked));
           _logLine('Ligação ${tConn.label} ${tConn.locked ? "desbloqueada" : "bloqueada"}.');
+          TestingChecklist.instance.mark('trigger_event');
           changed = true;
         }
         break;
@@ -545,59 +568,5 @@ class GameEngine extends ChangeNotifier {
   void _logLine(String msg) {
     _log.add(msg);
     if (_log.length > 200) _log.removeRange(0, _log.length - 200);
-  }
-
-  // ---------- SAVE/RESTORE ----------
-
-  SaveData saveState(String saveName) {
-    // Capture game flags (StateFlag values)
-    final gameFlags = <int, bool>{};
-    for (final flag in _gamestates) {
-      gameFlags[flag.id] = flag.value;
-    }
-
-    // Capture character positions
-    final charPositions = <int, int>{};
-    for (final char in _characters) {
-      charPositions[char.id] = char.areaId;
-    }
-
-    return SaveData(
-      saveName: saveName,
-      timestamp: DateTime.now(),
-      currentAreaId: _currentAreaId,
-      elapsedMinutes: _elapsedMinutes,
-      minutesSincePopulate: _minutesSincePopulate,
-      log: List<String>.from(_log),
-      gameFlags: gameFlags,
-      characterPositions: charPositions,
-    );
-  }
-
-  void restoreState(SaveData save) {
-    _currentAreaId = save.currentAreaId;
-    _elapsedMinutes = save.elapsedMinutes;
-    _minutesSincePopulate = save.minutesSincePopulate;
-    _log.clear();
-    _log.addAll(save.log);
-
-    // Restore game flags
-    for (final e in save.gameFlags.entries) {
-      _setGameState(e.key, e.value);
-    }
-
-    // Restore character positions
-    for (final e in save.characterPositions.entries) {
-      final char = _char(e.key);
-      if (char != null) {
-        _replace(
-          _characters,
-          (c) => c.id == e.key,
-          char.copyWith(areaId: e.value),
-        );
-      }
-    }
-
-    _tick();
   }
 }

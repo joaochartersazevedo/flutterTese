@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../data/renpy_asset_resolver.dart';
+import '../../data/testing_checklist.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/area.dart';
 import '../../models/connection.dart';
@@ -142,6 +143,7 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
             widget.editor.removeConnection(existing.id);
           }
           widget.editor.addConnection(conn);
+          TestingChecklist.instance.mark('create_connection');
           Navigator.of(ctx).pop();
         },
         onClear: existing == null
@@ -176,7 +178,10 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
       context,
       MaterialPageRoute(builder: (_) => AddAreaScreen(editor: widget.editor)),
     );
-    if (result != null) widget.editor.addArea(result);
+    if (result != null) {
+      widget.editor.addArea(result);
+      TestingChecklist.instance.mark('create_area');
+    }
   }
 
   Future<void> _editArea(Area area) async {
@@ -185,7 +190,10 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
       MaterialPageRoute(
           builder: (_) => AddAreaScreen(editor: widget.editor, existing: area)),
     );
-    if (result != null) widget.editor.updateArea(result);
+    if (result != null) {
+      widget.editor.updateArea(result);
+      TestingChecklist.instance.mark('edit_area');
+    }
   }
 
   void _deleteArea(BuildContext ctx, Area area) {
@@ -207,6 +215,7 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
               style: FilledButton.styleFrom(backgroundColor: AppColors.error),
               onPressed: () {
                 widget.editor.removeArea(area.id);
+                TestingChecklist.instance.mark('delete_entity');
                 Navigator.pop(dlgCtx);
               },
               child: const Text('Remover'),
@@ -346,6 +355,7 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
             onPressed: () {
               widget.editor.removeAreaFromDialogues(area.id);
               widget.editor.removeArea(area.id);
+              TestingChecklist.instance.mark('delete_entity');
               Navigator.pop(dlgCtx);
             },
             child: const Text('Confirmar'),
@@ -387,6 +397,7 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () {
               widget.editor.removeAreaBrute(area.id);
+              TestingChecklist.instance.mark('delete_entity');
               Navigator.pop(dlgCtx);
             },
             child: const Text('Eliminar tudo'),
@@ -461,7 +472,10 @@ class _AreaGraphScreenState extends State<AreaGraphScreen>
                                       isStarting: widget.editor.startingAreaId == a.id,
                                       onEdit: () => _editArea(a),
                                       onDelete: () => _deleteArea(context, a),
-                                      onSetStarting: () => widget.editor.setStartingArea(a.id),
+                                      onSetStarting: () {
+                                        widget.editor.setStartingArea(a.id);
+                                        TestingChecklist.instance.mark('set_starting_area');
+                                      },
                                     ))
                                 .toList(),
                           ),

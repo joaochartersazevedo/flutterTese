@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/dialogue_ai_service.dart';
+import '../../data/testing_checklist.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/area.dart';
 import '../../models/character.dart';
@@ -174,6 +175,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
         _genStatus = 'Gerado: ${lines.length} linhas.';
         _generating = false;
       });
+      TestingChecklist.instance.mark('ai_generate_dialogue');
     } catch (e) {
       if (mounted) {
         setState(() {

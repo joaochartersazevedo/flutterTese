@@ -1,1 +1,1 @@
-{"apiKey":"","assetsRoot":"/home/jonhy/Documents/mainTese/flutterTese/tese_assets","ollamaEnabled":true,"ollamaHost":"http://localhost:11434","ollamaModel":"gemma4:latest"}
+{"apiKey":"","assetsRoot":"/home/jonhy/Documents/mainTese/flutterTese/tese_assets","ollamaEnabled":true,"ollamaHost":"http://localhost:11434","ollamaModel":"gemma4:latest","testingChecklistProgress":["select_save"],"testingChecklistEnabled":true}
