@@ -79,6 +79,9 @@ class BlueprintEditor extends ChangeNotifier {
 
   void _removeAreaInternal(int id) {
     areas.remove(id);
+    if (startingAreaId == id) {
+      startingAreaId = areas.keys.firstOrNull ?? 1;
+    }
     for (final conn in connections.values.toList()) {
       if (conn.areaA == id || conn.areaB == id) {
         _removeConnectionInternal(conn.id);

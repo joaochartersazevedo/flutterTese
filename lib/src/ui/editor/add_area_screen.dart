@@ -45,7 +45,6 @@ class _AddAreaScreenState extends State<AddAreaScreen> {
         backgroundPath: _bgPath,
         connectionIds: widget.existing?.connectionIds ?? [],
         locked: _locked,
-        dialogueId: widget.existing?.dialogueId,
       ),
     );
   }

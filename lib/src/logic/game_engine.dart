@@ -249,6 +249,7 @@ class GameEngine extends ChangeNotifier {
     final branchRoot = choiceNode.children?[emotionId] ?? choiceNode.nextNode;
     _currentNode = branchRoot;
     _stepCount++;
+    _totalSteps = _stepCount + _countChain(branchRoot);
     if (_currentNode == null) {
       _applyConsequences(choiceNode.branchConsequences);
       _closeDialogue();
@@ -334,7 +335,6 @@ class GameEngine extends ChangeNotifier {
         .map(
           (a) => a.copyWith(
             connectionIds: List<int>.from(a.connectionIds),
-            clearDialogueId: true,
           ),
         )
         .toList();

@@ -5,7 +5,6 @@ class Area {
     required this.backgroundPath,
     required this.connectionIds,
     this.locked = false,
-    this.dialogueId,
   });
 
   final int id;
@@ -13,15 +12,12 @@ class Area {
   final String backgroundPath;
   final List<int> connectionIds;
   final bool locked;
-  final int? dialogueId;
 
   Area copyWith({
     String? name,
     String? backgroundPath,
     List<int>? connectionIds,
     bool? locked,
-    int? dialogueId,
-    bool clearDialogueId = false,
   }) {
     return Area(
       id: id,
@@ -29,7 +25,6 @@ class Area {
       backgroundPath: backgroundPath ?? this.backgroundPath,
       connectionIds: connectionIds ?? this.connectionIds,
       locked: locked ?? this.locked,
-      dialogueId: clearDialogueId ? null : (dialogueId ?? this.dialogueId),
     );
   }
 
@@ -39,7 +34,6 @@ class Area {
         'backgroundPath': backgroundPath,
         'connectionIds': connectionIds,
         'locked': locked,
-        if (dialogueId != null) 'dialogueId': dialogueId,
       };
 
   factory Area.fromJson(Map<String, dynamic> j) => Area(
@@ -48,6 +42,5 @@ class Area {
         backgroundPath: j['backgroundPath'] as String,
         connectionIds: (j['connectionIds'] as List).cast<int>(),
         locked: j['locked'] as bool? ?? false,
-        dialogueId: j['dialogueId'] as int?,
       );
 }

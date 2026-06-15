@@ -60,6 +60,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
+    if ((_targetIsArea || _targetIsConn || _targetIsState) && _targetId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Seleciona um alvo para o evento.')),
+      );
+      return;
+    }
     final id = widget.existing?.id ?? widget.editor.nextEventId();
     Navigator.pop(
       context,

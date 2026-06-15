@@ -194,9 +194,9 @@ class Dialogue {
       parentNode:
           DialogueNode.fromJson(j['parentNode'] as Map<String, dynamic>),
       singleTrigger: j['singleTrigger'] as bool,
-      preconditions: (j['preconditions'] as Map<String, dynamic>)
+      preconditions: (j['preconditions'] as Map<String, dynamic>? ?? {})
           .map((k, v) => MapEntry(int.parse(k), v as bool)),
-      consequences: (j['consequences'] as Map<String, dynamic>)
+      consequences: (j['consequences'] as Map<String, dynamic>? ?? {})
           .map((k, v) => MapEntry(int.parse(k), v as bool)),
       selfRemove: j['selfRemove'] as bool? ?? false,
       priority: j['priority'] as int? ?? 0,
