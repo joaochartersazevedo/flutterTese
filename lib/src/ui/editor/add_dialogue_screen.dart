@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../data/dialogue_ai_service.dart';
-import '../../data/testing_checklist.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/area.dart';
 import '../../models/character.dart';
@@ -84,109 +83,6 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
   late DialogueNode _root;
   int _activeSpeakerId = 0;
 
-  bool _generating = false;
-  String _genStatus = '';
-
-  Future<void> _generateFullDialogue() async {
-    if (!DialogueAiService.instance.hasApiKey) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Configura a chave AI primeiro')),
-      );
-      return;
-    }
-    final allChars = _chars;
-    final params = await showDialog<_GenFullParams>(
-      context: context,
-      builder: (_) => _GenerateFullDialogueDialog(
-        chars: allChars,
-        preselectedCharIds: _selectedCharIds,
-        initialTopic: _topic,
-      ),
-    );
-    if (params == null || !mounted) return;
-
-    final selectedChars = params.selectedCharIds.isEmpty
-        ? allChars
-        : allChars.where((c) => params.selectedCharIds.contains(c.id)).toList();
-
-    setState(() {
-      _generating = true;
-      _genStatus = 'A gerar…';
-    });
-    try {
-      final charNames = selectedChars.isEmpty
-          ? ['NPC']
-          : selectedChars.map((c) => c.name).toList();
-      final lines = await DialogueAiService.instance.generateDialogueTree(
-        characterNames: charNames,
-        topic: params.topic,
-        numLines: params.numLines,
-        characters: allChars,
-      );
-      final nameToId = {
-        for (final c in selectedChars) c.name.toLowerCase(): c.id,
-      };
-      final npcNodes = lines.map((l) {
-        final id =
-            nameToId[l.speaker.toLowerCase()] ??
-            (selectedChars.isNotEmpty ? selectedChars.first.id : 0);
-        return DialogueNode(
-          line: DialogueLine(speakerId: id, text: l.text),
-        );
-      }).toList();
-
-      // If emotions selected: fetch player lines and interleave choice nodes.
-      final List<DialogueNode> allNodes;
-      if (params.selectedEmotionIds.isNotEmpty && npcNodes.isNotEmpty) {
-        setState(() => _genStatus = 'A gerar emoções…');
-        final npcName = selectedChars.isNotEmpty
-            ? selectedChars.first.name
-            : 'NPC';
-        final emotionChoices = await DialogueAiService.instance
-            .generatePlayerLines(
-              emotionIds: params.selectedEmotionIds,
-              topic: params.topic,
-              npcName: npcName,
-            );
-        allNodes = [];
-        for (var i = 0; i < npcNodes.length; i++) {
-          allNodes.add(npcNodes[i]);
-          // Insert choice node after every NPC line except the last.
-          if (i < npcNodes.length - 1) {
-            allNodes.add(
-              DialogueNode(
-                choice: DialogueChoice(choices: Map.from(emotionChoices)),
-              ),
-            );
-          }
-        }
-      } else {
-        allNodes = npcNodes;
-      }
-
-      for (var i = 0; i < allNodes.length - 1; i++) {
-        allNodes[i].nextNode = allNodes[i + 1];
-      }
-      setState(() {
-        _root = allNodes.isNotEmpty
-            ? allNodes.first
-            : DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
-        _topic = params.topic;
-        _genStatus = 'Gerado: ${lines.length} linhas.';
-        _generating = false;
-      });
-      TestingChecklist.instance.mark('ai_generate_dialogue');
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _genStatus = 'Erro — ver detalhes';
-          _generating = false;
-        });
-        _showError(context, '$e');
-      }
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -205,6 +101,22 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     _root =
         ex?.parentNode ??
         DialogueNode(line: DialogueLine(speakerId: 0, text: ''));
+    _selectedCharIds = _speakersInTree(_root).toList()..sort();
+  }
+
+  /// Characters that actually speak somewhere in the dialogue tree (player excluded).
+  Set<int> _speakersInTree(DialogueNode? node, [Set<int>? acc]) {
+    final seen = acc ?? <int>{};
+    if (node == null) return seen;
+    final speakerId = node.line?.speakerId;
+    if (speakerId != null && speakerId != 0) seen.add(speakerId);
+    if (node.children != null) {
+      for (final child in node.children!.values) {
+        _speakersInTree(child, seen);
+      }
+    }
+    _speakersInTree(node.nextNode, seen);
+    return seen;
   }
 
   @override
@@ -247,7 +159,9 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
     Navigator.pop(context, d);
   }
 
-  void _refresh() => setState(() {});
+  void _refresh() => setState(() {
+        _selectedCharIds = _speakersInTree(_root).toList()..sort();
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -258,19 +172,6 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
           widget.existing == null ? 'Novo Diálogo' : 'Editar Diálogo',
         ),
         actions: [
-          if (_genStatus.isNotEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
-                  _genStatus,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-            ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 20),
             tooltip: 'Definições',
@@ -280,34 +181,6 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
             ),
           ),
           _AiKeyButton(),
-          const SizedBox(width: 4),
-          _generating
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              : Tooltip(
-                  message: 'Gerar diálogo com AI',
-                  child: OutlinedButton.icon(
-                    onPressed: _generateFullDialogue,
-                    icon: const Icon(Icons.auto_awesome, size: 14),
-                    label: const Text('Gerar', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.accent,
-                      side: BorderSide(
-                        color: AppColors.accent.withValues(alpha: 0.6),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                    ),
-                  ),
-                ),
           const SizedBox(width: 8),
           FilledButton.icon(
             onPressed: _submit,
@@ -398,6 +271,7 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
                         chars: _chars,
                         flags: _flags,
                         activeSpeakerId: _activeSpeakerId,
+                        topic: _topic,
                         onChanged: _refresh,
                       ),
                     ),
@@ -471,7 +345,6 @@ class _MetaPanel extends StatefulWidget {
 }
 
 class _MetaPanelState extends State<_MetaPanel> {
-  late List<int> _charIds;
   late bool _st, _sr, _ending;
   late int _prio;
   late Map<int, bool> _pre, _cons;
@@ -481,7 +354,6 @@ class _MetaPanelState extends State<_MetaPanel> {
   @override
   void initState() {
     super.initState();
-    _charIds = List.of(widget.selectedCharIds);
     _st = widget.singleTrigger;
     _sr = widget.selfRemove;
     _ending = widget.isEnding;
@@ -492,8 +364,17 @@ class _MetaPanelState extends State<_MetaPanel> {
     _areaIds = List.of(widget.areaIds);
   }
 
-  void _notify() =>
-      widget.onChanged(_charIds, _st, _sr, _ending, _prio, _pre, _cons, _groupId, _areaIds);
+  void _notify() => widget.onChanged(
+        widget.selectedCharIds,
+        _st,
+        _sr,
+        _ending,
+        _prio,
+        _pre,
+        _cons,
+        _groupId,
+        _areaIds,
+      );
 
   void _addFlagCondition(Map<int, bool> map, bool defaultVal) {
     final available = widget.flags.where((f) => !map.containsKey(f.id)).toList();
@@ -531,6 +412,17 @@ class _MetaPanelState extends State<_MetaPanel> {
 
         // ── Characters ──────────────────────────────────────────────────────
         _SectionHeader(icon: Icons.people_outline, label: 'Personagens'),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: Text(
+            'Detetado automaticamente a partir de quem fala na árvore.',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
         if (widget.chars.isEmpty)
           const Padding(
             padding: EdgeInsets.only(bottom: 4),
@@ -542,86 +434,78 @@ class _MetaPanelState extends State<_MetaPanel> {
         else
           Column(
             children: widget.chars.map((c) {
-              final inDialogue = _charIds.contains(c.id);
+              final inDialogue = widget.selectedCharIds.contains(c.id);
               final isActiveSpeaker = widget.activeSpeakerId == c.id;
               final charColor = _hex(c.colorHex);
-              return InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () {
-                  setState(() {
-                    if (inDialogue) {
-                      _charIds.remove(c.id);
-                    } else {
-                      _charIds.add(c.id);
-                    }
-                  });
-                  _notify();
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: inDialogue
-                        ? charColor.withValues(alpha: 0.08)
-                        : AppColors.surfaceElevated,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: inDialogue ? charColor.withValues(alpha: 0.35) : AppColors.border,
-                    ),
+              return Container(
+                margin: const EdgeInsets.only(bottom: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: inDialogue
+                      ? charColor.withValues(alpha: 0.08)
+                      : AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: inDialogue ? charColor.withValues(alpha: 0.35) : AppColors.border,
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: charColor,
-                          shape: BoxShape.circle,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: charColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        c.name,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: inDialogue
+                              ? AppColors.textPrimary
+                              : AppColors.textMuted,
+                          fontWeight: inDialogue
+                              ? FontWeight.w500
+                              : FontWeight.normal,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          c.name,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: inDialogue
-                                ? AppColors.textPrimary
-                                : AppColors.textMuted,
-                            fontWeight: inDialogue
-                                ? FontWeight.w500
-                                : FontWeight.normal,
-                          ),
+                    ),
+                    // Default speaker toggle — sets who new "Fala" blocks start as.
+                    Tooltip(
+                      message: isActiveSpeaker
+                          ? 'Personagem padrão para novos blocos'
+                          : 'Definir como personagem padrão para novos blocos',
+                      child: GestureDetector(
+                        onTap: () => widget.onActiveSpeakerChanged(c.id),
+                        child: Icon(
+                          isActiveSpeaker
+                              ? Icons.mic
+                              : Icons.mic_none_outlined,
+                          size: 15,
+                          color: isActiveSpeaker
+                              ? AppColors.accent
+                              : AppColors.textMuted,
                         ),
                       ),
-                      // Active speaker toggle
-                      Tooltip(
-                        message: isActiveSpeaker
-                            ? 'Narrador ativo'
-                            : 'Definir como narrador',
-                        child: GestureDetector(
-                          onTap: () => widget.onActiveSpeakerChanged(c.id),
-                          child: Icon(
-                            isActiveSpeaker
-                                ? Icons.mic
-                                : Icons.mic_none_outlined,
-                            size: 15,
-                            color: isActiveSpeaker
-                                ? AppColors.accent
-                                : AppColors.textMuted,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
+                    ),
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: inDialogue
+                          ? 'Fala nesta árvore'
+                          : 'Não fala nesta árvore',
+                      child: Icon(
                         inDialogue
                             ? Icons.check_box_outlined
                             : Icons.check_box_outline_blank,
                         size: 15,
                         color: inDialogue ? charColor : AppColors.textMuted,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               );
             }).toList(),
@@ -1081,6 +965,7 @@ class _TreeView extends StatefulWidget {
     this.previousLines = const <String>[],
     this.rootLockedSpeakerId,
     this.activeSpeakerId = 0,
+    this.topic = '',
   });
 
   final DialogueNode root;
@@ -1093,6 +978,7 @@ class _TreeView extends StatefulWidget {
   /// If set, root NodeCard speaker is locked (no dropdown).
   final int? rootLockedSpeakerId;
   final int activeSpeakerId;
+  final String topic;
 
   @override
   State<_TreeView> createState() => _TreeViewState();
@@ -1168,12 +1054,22 @@ class _TreeViewState extends State<_TreeView> {
             onRemoveSelf: widget.onRemoveSelf,
             lockedSpeakerId: widget.rootLockedSpeakerId,
             emotionId: widget.emotionId,
+            topic: widget.topic,
           ),
 
           // ── Choice branches (side-by-side) ─────────────────────────────
           if (widget.root.isChoice) ...[
             const SizedBox(height: 8),
             _AddBranchBar(node: widget.root, onChanged: widget.onChanged),
+            const SizedBox(height: 6),
+            _GenerateEmotionLinesButton(
+              node: widget.root,
+              chars: widget.chars,
+              topic: widget.topic,
+              previousLines: widget.previousLines,
+              activeSpeakerId: widget.activeSpeakerId,
+              onChanged: widget.onChanged,
+            ),
             if (sortedEntries.isNotEmpty) ...[
               const SizedBox(height: 8),
               Stack(
@@ -1196,6 +1092,7 @@ class _TreeViewState extends State<_TreeView> {
                                 parentChoiceNode: widget.root,
                                 previousLines: widget.previousLines,
                                 activeSpeakerId: widget.activeSpeakerId,
+                                topic: widget.topic,
                                 onChanged: widget.onChanged,
                               ),
                             ),
@@ -1228,6 +1125,7 @@ class _TreeViewState extends State<_TreeView> {
               chars: widget.chars,
               flags: widget.flags,
               activeSpeakerId: widget.activeSpeakerId,
+              topic: widget.topic,
               previousLines: [
                 ...widget.previousLines,
                 if (widget.root.line != null) widget.root.line!.text,
@@ -1274,6 +1172,7 @@ class _BranchColumn extends StatelessWidget {
     required this.onChanged,
     this.previousLines = const <String>[],
     this.activeSpeakerId = 0,
+    this.topic = '',
   });
 
   final int emotionId;
@@ -1284,6 +1183,7 @@ class _BranchColumn extends StatelessWidget {
   final VoidCallback onChanged;
   final List<String> previousLines;
   final int activeSpeakerId;
+  final String topic;
 
   @override
   Widget build(BuildContext context) {
@@ -1367,6 +1267,8 @@ class _BranchColumn extends StatelessWidget {
             chars: chars,
             flags: flags,
             activeSpeakerId: activeSpeakerId,
+            topic: topic,
+            emotionId: emotionId,
             previousLines: previousLines,
             onChanged: onChanged,
             rootLockedSpeakerId:
@@ -1432,6 +1334,233 @@ class _AddBranchBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GENERATE EMOTION LINES BUTTON  (batch AI: multiple player lines at once)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GenerateEmotionLinesButton extends StatefulWidget {
+  const _GenerateEmotionLinesButton({
+    required this.node,
+    required this.chars,
+    required this.previousLines,
+    required this.onChanged,
+    this.topic = '',
+    this.activeSpeakerId = 0,
+  });
+
+  final DialogueNode node;
+  final List<Character> chars;
+  final List<String> previousLines;
+  final VoidCallback onChanged;
+  final String topic;
+  final int activeSpeakerId;
+
+  @override
+  State<_GenerateEmotionLinesButton> createState() =>
+      _GenerateEmotionLinesButtonState();
+}
+
+class _GenerateEmotionLinesButtonState
+    extends State<_GenerateEmotionLinesButton> {
+  bool _generating = false;
+
+  Character? _npc() {
+    if (widget.activeSpeakerId != 0) {
+      final found = widget.chars
+          .where((c) => c.id == widget.activeSpeakerId)
+          .firstOrNull;
+      if (found != null) return found;
+    }
+    return widget.chars.where((c) => c.id != 0).firstOrNull;
+  }
+
+  Future<void> _generate() async {
+    if (!DialogueAiService.instance.hasApiKey) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configura a chave AI primeiro')),
+      );
+      return;
+    }
+    final preselected = widget.node.children?.keys.toSet() ?? <int>{};
+    final result = await showDialog<_EmotionPickerResult>(
+      context: context,
+      builder: (_) => _EmotionPickerDialog(
+        preselected: preselected,
+        initialTopic: widget.topic,
+      ),
+    );
+    if (result == null || result.emotionIds.isEmpty || !mounted) return;
+
+    setState(() => _generating = true);
+    try {
+      final npc = _npc();
+      final lines = await DialogueAiService.instance.generatePlayerLines(
+        emotionIds: result.emotionIds.toList(),
+        topic: result.topic.isNotEmpty ? result.topic : 'conversa geral',
+        npcName: npc?.name ?? 'NPC',
+        previousLine: widget.previousLines.join('\n'),
+        npc: npc,
+        allChars: widget.chars,
+      );
+      if (lines.isEmpty) {
+        if (mounted) {
+          setState(() => _generating = false);
+          _showError(context, 'AI devolveu resposta vazia. Verifica a chave e o modelo.');
+        }
+        return;
+      }
+      for (final entry in lines.entries) {
+        widget.node.choice ??= DialogueChoice();
+        widget.node.choice!.choices[entry.key] = entry.value;
+        widget.node.children ??= {};
+        final branch = widget.node.children!.putIfAbsent(
+          entry.key,
+          () => DialogueNode(line: DialogueLine(speakerId: 0, text: '')),
+        );
+        if (branch.isLine && branch.line!.speakerId == 0) {
+          branch.line!.text = entry.value;
+        }
+      }
+      if (mounted) setState(() => _generating = false);
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _generating = false);
+        _showError(context, '$e');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Gerar várias linhas de emoção com AI',
+      child: OutlinedButton.icon(
+        onPressed: _generating ? null : _generate,
+        icon: _generating
+            ? const SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(strokeWidth: 1.5),
+              )
+            : const Icon(Icons.auto_awesome, size: 13),
+        label: Text(
+          _generating ? 'A gerar…' : 'Gerar emoções com AI',
+          style: const TextStyle(fontSize: 11),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.accent,
+          side: BorderSide(color: AppColors.accent.withValues(alpha: 0.5)),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+    );
+  }
+}
+
+class _EmotionPickerResult {
+  const _EmotionPickerResult({required this.emotionIds, required this.topic});
+  final Set<int> emotionIds;
+  final String topic;
+}
+
+class _EmotionPickerDialog extends StatefulWidget {
+  const _EmotionPickerDialog({required this.preselected, this.initialTopic = ''});
+  final Set<int> preselected;
+  final String initialTopic;
+
+  @override
+  State<_EmotionPickerDialog> createState() => _EmotionPickerDialogState();
+}
+
+class _EmotionPickerDialogState extends State<_EmotionPickerDialog> {
+  late Set<int> _selected;
+  late final TextEditingController _topicCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Set.of(widget.preselected);
+    _topicCtrl = TextEditingController(text: widget.initialTopic);
+  }
+
+  @override
+  void dispose() {
+    _topicCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Gerar linhas de emoção com AI'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _topicCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Tópico da conversa',
+                hintText: 'ex: próximo exame, amizade, segredo',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: emotionWheel.map((e) {
+                final sel = _selected.contains(e.id);
+                final color = _hex(e.color);
+                return FilterChip(
+                  avatar: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                  ),
+                  label: Text(e.label, style: const TextStyle(fontSize: 12)),
+                  selected: sel,
+                  onSelected: (v) => setState(() {
+                    if (v) {
+                      _selected.add(e.id);
+                    } else {
+                      _selected.remove(e.id);
+                    }
+                  }),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _selected.isEmpty
+              ? null
+              : () => Navigator.pop(
+                  context,
+                  _EmotionPickerResult(
+                    emotionIds: _selected,
+                    topic: _topicCtrl.text.trim(),
+                  ),
+                ),
+          icon: const Icon(Icons.auto_awesome, size: 14),
+          label: const Text('Gerar'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // NODE CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1445,6 +1574,7 @@ class _NodeCard extends StatefulWidget {
     this.previousLines = const <String>[],
     this.lockedSpeakerId,
     this.emotionId,
+    this.topic = '',
   });
 
   final DialogueNode node;
@@ -1457,6 +1587,8 @@ class _NodeCard extends StatefulWidget {
   final int? lockedSpeakerId;
   /// Emotion context for AI line generation (branch emotion).
   final int? emotionId;
+  /// Dialogue topic, for AI context.
+  final String topic;
 
   @override
   State<_NodeCard> createState() => _NodeCardState();
@@ -1569,9 +1701,11 @@ class _NodeCardState extends State<_NodeCard> {
           ? _emotionName(widget.emotionId!)
           : null;
       final contextWithEmotion = [
+        if (widget.topic.isNotEmpty) 'Topic of the conversation: ${widget.topic}.',
         if (emotionLabel != null) 'Express the emotion: $emotionLabel.',
         if (userCtx.isNotEmpty) userCtx,
-        if (userCtx.isEmpty && emotionLabel == null) 'conversa geral',
+        if (userCtx.isEmpty && emotionLabel == null && widget.topic.isEmpty)
+          'conversa geral',
       ].join(' ');
       final suggested = await DialogueAiService.instance.suggestLine(
         speakerName: speaker.name,
@@ -2229,243 +2363,3 @@ class _AiKeyButton extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GENERATE FULL DIALOGUE DIALOG + PARAMS
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _GenFullParams {
-  const _GenFullParams({
-    required this.topic,
-    required this.numLines,
-    required this.selectedCharIds,
-    required this.selectedEmotionIds,
-  });
-  final String topic;
-  final int numLines;
-  final List<int> selectedCharIds;
-  final List<int> selectedEmotionIds;
-}
-
-class _GenerateFullDialogueDialog extends StatefulWidget {
-  const _GenerateFullDialogueDialog({
-    required this.chars,
-    required this.preselectedCharIds,
-    this.initialTopic = '',
-  });
-  final List<Character> chars;
-  final List<int> preselectedCharIds;
-  final String initialTopic;
-
-  @override
-  State<_GenerateFullDialogueDialog> createState() =>
-      _GenerateFullDialogueDialogState();
-}
-
-class _GenerateFullDialogueDialogState
-    extends State<_GenerateFullDialogueDialog> {
-  late final TextEditingController _topicCtrl;
-  int _numLines = 4;
-  late Set<int> _selCharIds;
-  late Set<int> _selEmotionIds;
-
-  @override
-  void initState() {
-    super.initState();
-    _topicCtrl = TextEditingController(text: widget.initialTopic);
-    _selCharIds = widget.preselectedCharIds.isNotEmpty
-        ? Set.of(widget.preselectedCharIds)
-        : widget.chars.map((c) => c.id).toSet();
-    _selEmotionIds = emotionWheel.map((e) => e.id).toSet();
-  }
-
-  @override
-  void dispose() {
-    _topicCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Gerar Diálogo com AI'),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── char selection ────────────────────────────────────────────
-              const Text(
-                'Personagens',
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 6),
-              if (widget.chars.isEmpty)
-                const Text(
-                  'Sem personagens no diálogo',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                    fontStyle: FontStyle.italic,
-                  ),
-                )
-              else
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: widget.chars.map((c) {
-                    final sel = _selCharIds.contains(c.id);
-                    return FilterChip(
-                      label: Text(c.name, style: const TextStyle(fontSize: 12)),
-                      selected: sel,
-                      onSelected: (v) => setState(() {
-                        if (v) {
-                          _selCharIds.add(c.id);
-                        } else {
-                          _selCharIds.remove(c.id);
-                        }
-                      }),
-                    );
-                  }).toList(),
-                ),
-              const SizedBox(height: 16),
-              // ── topic ─────────────────────────────────────────────────────
-              TextField(
-                controller: _topicCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Tópico da conversa',
-                  hintText: 'ex: próximo exame, amizade, segredo',
-                ),
-              ),
-              const SizedBox(height: 16),
-              // ── num lines ─────────────────────────────────────────────────
-              Row(
-                children: [
-                  const Text('Linhas NPC:', style: TextStyle(fontSize: 13)),
-                  Expanded(
-                    child: Slider(
-                      value: _numLines.toDouble(),
-                      min: 1,
-                      max: 10,
-                      divisions: 9,
-                      label: '$_numLines',
-                      onChanged: (v) => setState(() => _numLines = v.round()),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 24,
-                    child: Text(
-                      '$_numLines',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // ── emotion selection ─────────────────────────────────────────
-              const Text(
-                'Emoções do jogador (deixar vazio = sem escolha)',
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 8),
-              _EmotionSelectionGrid(
-                selected: _selEmotionIds,
-                onToggle: (id) => setState(() {
-                  if (_selEmotionIds.contains(id)) {
-                    _selEmotionIds.remove(id);
-                  } else {
-                    _selEmotionIds.add(id);
-                  }
-                }),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton.icon(
-          onPressed: () {
-            if (_topicCtrl.text.trim().isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Escreve um tópico para a conversa.')),
-              );
-              return;
-            }
-            Navigator.pop(
-              context,
-              _GenFullParams(
-                topic: _topicCtrl.text.trim(),
-                numLines: _numLines,
-                selectedCharIds: _selCharIds.toList(),
-                selectedEmotionIds: _selEmotionIds.toList(),
-              ),
-            );
-          },
-          icon: const Icon(Icons.auto_awesome, size: 14),
-          label: const Text('Gerar'),
-        ),
-      ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// EMOTION SELECTION GRID (3×3)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _EmotionSelectionGrid extends StatelessWidget {
-  const _EmotionSelectionGrid({required this.selected, required this.onToggle});
-  final Set<int> selected;
-  final void Function(int id) onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 4,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 4,
-      crossAxisSpacing: 4,
-      childAspectRatio: 3.2,
-      children: emotionWheel.map((e) {
-        final sel = selected.contains(e.id);
-        return InkWell(
-          borderRadius: BorderRadius.circular(6),
-          onTap: () => onToggle(e.id),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-            decoration: BoxDecoration(
-              color: sel
-                  ? _emotionColor(e.id).withOpacity(0.25)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: sel
-                    ? _emotionColor(e.id)
-                    : AppColors.textMuted.withOpacity(0.3),
-                width: sel ? 1.5 : 1,
-              ),
-            ),
-            child: Text(
-              e.label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11,
-                color: sel ? _emotionColor(e.id) : AppColors.textMuted,
-                fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-}

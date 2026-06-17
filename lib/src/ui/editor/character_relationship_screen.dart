@@ -67,12 +67,15 @@ class _CharacterRelationshipScreenState
 
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
+  late TransformationController _transformController;
+  final _canvasKey = GlobalKey();
 
   static final _resolver = RenpyAssetResolver.auto();
 
   @override
   void initState() {
     super.initState();
+    _transformController = TransformationController();
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -82,11 +85,22 @@ class _CharacterRelationshipScreenState
     );
     _arrangeInCircle();
     widget.editor.addListener(_onEditorChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _centerCanvas());
+  }
+
+  void _centerCanvas() {
+    final box = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final size = box.size;
+    final dx = size.width / 2 - _canvasSize / 2;
+    final dy = size.height / 2 - _canvasSize / 2;
+    _transformController.value = Matrix4.translationValues(dx, dy, 0);
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _transformController.dispose();
     widget.editor.removeListener(_onEditorChanged);
     super.dispose();
   }
@@ -506,6 +520,8 @@ class _CharacterRelationshipScreenState
               child: Stack(
                 children: [
                   InteractiveViewer(
+                    key: _canvasKey,
+                    transformationController: _transformController,
                     constrained: false,
                     boundaryMargin: const EdgeInsets.all(200),
                     minScale: 0.25,

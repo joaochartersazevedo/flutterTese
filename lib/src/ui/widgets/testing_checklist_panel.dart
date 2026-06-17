@@ -26,7 +26,7 @@ class _TestingChecklistOverlayState extends State<TestingChecklistOverlay> {
           children: [
             widget.child,
             Positioned(
-              right: 16,
+              left: 16,
               bottom: 16,
               child: FloatingActionButton(
                 heroTag: 'testing_checklist_fab',
@@ -37,7 +37,7 @@ class _TestingChecklistOverlayState extends State<TestingChecklistOverlay> {
             ),
             if (_open)
               Positioned(
-                right: 16,
+                left: 16,
                 bottom: 88,
                 width: 340,
                 height: 480,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -105,6 +106,7 @@ class DialogueAiService {
 
   Future<String> _call(String prompt, {int maxTokens = 200}) async {
     final useOllama = AppPreferences.ollamaEnabled;
+    final backend = useOllama ? 'Ollama (${AppPreferences.ollamaHost})' : 'OpenRouter';
 
     final String url;
     final Map<String, String> headers;
@@ -112,12 +114,23 @@ class DialogueAiService {
 
     if (useOllama) {
       final host = AppPreferences.ollamaHost.trimRight().replaceAll(RegExp(r'/$'), '');
+      if (host.isEmpty) {
+        throw Exception(
+          'Ollama está ativado mas não tem host configurado. '
+          'Define o endereço do servidor Ollama nas Definições.',
+        );
+      }
       url = '$host/v1/chat/completions';
       headers = {'Content-Type': 'application/json'};
       model = AppPreferences.ollamaModel;
     } else {
       final key = apiKey;
-      if (key.isEmpty) throw Exception('API key not set');
+      if (key.isEmpty) {
+        throw Exception(
+          'Chave da API OpenRouter não configurada. '
+          'Define OPENROUTER_API_KEY nas Definições, num ficheiro .env, ou no project.json.',
+        );
+      }
       url = _openRouterUrl;
       headers = {
         'Authorization': 'Bearer $key',
@@ -144,30 +157,64 @@ class DialogueAiService {
       'temperature': 0.75,
     });
 
-    final respFuture = http.post(Uri.parse(url), headers: headers, body: body);
-    final resp = useOllama
-        ? await respFuture
-        : await respFuture.timeout(const Duration(seconds: 30));
+    http.Response resp;
+    try {
+      final respFuture = http.post(Uri.parse(url), headers: headers, body: body);
+      resp = useOllama
+          ? await respFuture
+          : await respFuture.timeout(const Duration(seconds: 30));
+    } on TimeoutException {
+      throw Exception(
+        '$backend não respondeu a tempo (>30s) a $url. '
+        'Verifica a ligação à internet ou se o modelo "$model" está disponível.',
+      );
+    } on SocketException catch (e) {
+      throw Exception(
+        'Não foi possível ligar a $backend em $url (${e.message}). '
+        'Verifica o endereço/porta e se o servidor está a correr.',
+      );
+    } on http.ClientException catch (e) {
+      throw Exception('Falha de rede a contactar $backend em $url: ${e.message}');
+    }
 
     if (resp.statusCode != 200) {
-      throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
+      final reason = switch (resp.statusCode) {
+        401 || 403 => 'Chave/credenciais da API inválidas ou sem permissão.',
+        404 => 'Modelo "$model" não encontrado em $backend.',
+        429 => 'Limite de pedidos excedido (rate limit) em $backend. Espera um pouco e tenta de novo.',
+        >= 500 => '$backend teve um erro interno.',
+        _ => 'Pedido rejeitado por $backend.',
+      };
+      throw Exception(
+        '$reason\nHTTP ${resp.statusCode} ($backend, modelo "$model").\nResposta: ${resp.body}',
+      );
     }
 
     final Map<String, dynamic> data;
     try {
       data = jsonDecode(resp.body) as Map<String, dynamic>;
     } catch (e) {
-      throw Exception('JSON decode failed: $e\nBody: ${resp.body}');
+      throw Exception(
+        'Resposta de $backend não é JSON válido: $e\nResposta recebida: ${resp.body}',
+      );
     }
 
     final choices = data['choices'] as List?;
     if (choices == null || choices.isEmpty) {
-      throw Exception('No choices in response. Body: ${resp.body}');
+      final err = data['error'];
+      throw Exception(
+        err != null
+            ? '$backend devolveu um erro: $err'
+            : '$backend não devolveu nenhuma escolha (choices). Resposta completa: ${resp.body}',
+      );
     }
 
     final text = (choices.first as Map?)?['message']?['content'];
     if (text == null) {
-      throw Exception('Missing message.content. Choice: ${choices.first}');
+      throw Exception(
+        '$backend devolveu uma resposta sem texto (message.content em falta). '
+        'Escolha recebida: ${choices.first}',
+      );
     }
 
     return (text as String).trim();
@@ -200,66 +247,36 @@ class DialogueAiService {
     return (await _call(prompt, maxTokens: 100)).trim();
   }
 
-  /// Generate a single line from a custom prompt (emotion responses, context-aware).
-  Future<String> generateLine(String prompt) async {
-    return (await _call(prompt, maxTokens: 150)).trim();
-  }
-
-  /// Generate a full scripted dialogue given character names and context.
-  Future<List<({String speaker, String text})>> generateDialogueTree({
-    required List<String> characterNames,
-    required String topic,
-    required int numLines,
-    List<Character> characters = const [],
-  }) async {
-    final chars = characterNames.join(', ');
-    final charContext = _buildCharacterContext(
-      characters.where((c) => characterNames.contains(c.name)).toList(),
-      characters,
-    );
-    final charContextLine = charContext.isNotEmpty ? '\n$charContext' : '';
-    final prompt =
-        'Write a $numLines-line visual novel dialogue between: $chars.\n'
-        'Topic: $topic.$charContextLine\n'
-        'Return ONLY a JSON array, no prose:\n'
-        '[{"speaker":"Name","text":"line text"}, ...]\n'
-        'Keep each line under 30 words.';
-
-    final raw = await _call(prompt, maxTokens: numLines * 60);
-
-    // Extract JSON array from response
-    final match = RegExp(r'\[.*\]', dotAll: true).firstMatch(raw);
-    if (match == null) throw Exception('No JSON array in response');
-    try {
-      final list = jsonDecode(match.group(0)!) as List;
-      return list.map((e) {
-        final m = (e as Map?) ?? {};
-        return (
-          speaker: m['speaker'] as String? ?? '',
-          text: m['text'] as String? ?? '',
-        );
-      }).toList();
-    } catch (e) {
-      throw Exception('Failed to parse dialogue JSON: $e');
-    }
-  }
-
   /// Generate player lines for each emotion in a playerChat choice node.
   /// Returns emotionId → player line text (one short line per emotion).
   Future<Map<int, String>> generatePlayerLines({
     required List<int> emotionIds,
     required String topic,
     required String npcName,
+    String previousLine = '',
+    Character? npc,
+    List<Character> allChars = const [],
   }) async {
     final selected = emotionIds
         .where((id) => id >= 0 && id < _emotionNames.length)
         .map((id) => '"${_emotionNames[id]}"')
         .join(', ');
 
+    final hist = previousLine.isNotEmpty
+        ? '\nDialogue so far:\n$previousLine'
+        : '';
+    final personalityCtx = npc != null ? _personalityContext(npc) : '';
+    final relCtx = npc != null ? _relationshipsContext(npc, allChars) : '';
+    final personalityLine = personalityCtx.isNotEmpty
+        ? '\nNPC personality: $personalityCtx'
+        : '';
+    final relLine = relCtx.isNotEmpty ? '\nNPC relationships: $relCtx' : '';
+
     final prompt =
-        'Visual novel. NPC: $npcName. Topic: $topic.\n'
+        'Visual novel. NPC: $npcName.$personalityLine$relLine\n'
+        'Topic: $topic.$hist\n'
         'For EACH emotion below, write ONE short first-person player line '
-        'expressing that emotion.\n'
+        'reacting to the NPC while expressing that emotion.\n'
         'Return ONLY JSON, no prose:\n'
         '{"EmotionName": "player line text", ...}\n'
         'Emotions: $selected\n'
@@ -268,12 +285,19 @@ class DialogueAiService {
     final raw = await _call(prompt, maxTokens: emotionIds.length * 40);
 
     final match = RegExp(r'\{.*\}', dotAll: true).firstMatch(raw);
-    if (match == null) throw Exception('No JSON object in response');
+    if (match == null) {
+      throw Exception(
+        'A AI não devolveu um objeto JSON com as linhas dos jogador.\n'
+        'Resposta crua recebida: "$raw"',
+      );
+    }
     final Map<String, dynamic> map;
     try {
       map = jsonDecode(match.group(0)!) as Map<String, dynamic>;
     } catch (e) {
-      throw Exception('Failed to parse player lines JSON: $e');
+      throw Exception(
+        'JSON das linhas do jogador inválido: $e\nTexto extraído: "${match.group(0)}"',
+      );
     }
 
     final result = <int, String>{};
@@ -282,6 +306,12 @@ class DialogueAiService {
       final name = _emotionNames[id];
       final text = (map[name] as String? ?? '').trim();
       if (text.isNotEmpty) result[id] = text;
+    }
+    if (result.isEmpty) {
+      throw Exception(
+        'A AI devolveu JSON válido mas sem nenhuma das emoções pedidas ($selected).\n'
+        'Chaves recebidas: ${map.keys.join(", ")}',
+      );
     }
     return result;
   }
@@ -317,19 +347,6 @@ String _relationshipsContext(Character speaker, List<Character> allChars) {
     parts.add('$name: ${entry.value}');
   }
   return parts.join('; ');
-}
-
-String _buildCharacterContext(List<Character> subjects, List<Character> allChars) {
-  final lines = <String>[];
-  for (final c in subjects) {
-    final p = _personalityContext(c);
-    final r = _relationshipsContext(c, allChars);
-    if (p.isEmpty && r.isEmpty) continue;
-    final parts = [if (p.isNotEmpty) 'personality: $p', if (r.isNotEmpty) 'relationships: $r'];
-    lines.add('${c.name} — ${parts.join('; ')}');
-  }
-  if (lines.isEmpty) return '';
-  return 'Character context:\n${lines.join('\n')}';
 }
 
 /// Emotion names for AI prompts (index = emotionId, matches emotionWheel in emotion.dart).

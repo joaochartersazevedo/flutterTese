@@ -762,74 +762,97 @@ class _EntityList<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: FloatingActionButton(
-        onPressed: onAdd,
-        tooltip: 'Adicionar',
-        child: const Icon(Icons.add),
-      ),
-      body: items.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.inbox_outlined,
-                    size: 48,
-                    color: AppColors.textMuted,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Sem entradas',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Clica + para adicionar',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
-                  ),
-                ],
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          child: Row(
+            children: [
+              Text(
+                '${items.length}',
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
-            )
-          : LayoutBuilder(
-              builder: (context, constraints) {
-                final maxWidth = (constraints.maxWidth - 40)
-                    .clamp(200.0, _cardWidth)
-                    .toDouble();
-                final textScale = MediaQuery.textScaleFactorOf(context);
-                final rowHeight = 104 * textScale;
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: maxWidth,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    mainAxisExtent: rowHeight,
-                  ),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    final t = trailing?.call(item);
-                    return _EntityCard(
-                      label: label(item),
-                      subtitle: subtitle?.call(item),
-                      trailing: t,
-                      onEdit: onEdit != null ? () => onEdit!(item) : null,
-                      onDelete: () => _confirmDelete(
-                        context,
-                        label(item),
-                        () => onDelete(item),
+              const Spacer(),
+              FilledButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Novo'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: items.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.inbox_outlined,
+                        size: 48,
+                        color: AppColors.textMuted,
                       ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Sem entradas',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Clica em "Novo" para adicionar',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final maxWidth = (constraints.maxWidth - 40)
+                        .clamp(200.0, _cardWidth)
+                        .toDouble();
+                    final textScale = MediaQuery.textScaleFactorOf(context);
+                    final rowHeight = 104 * textScale;
+                    return GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: maxWidth,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        mainAxisExtent: rowHeight,
+                      ),
+                      itemCount: items.length,
+                      itemBuilder: (context, index) {
+                        final item = items[index];
+                        final t = trailing?.call(item);
+                        return _EntityCard(
+                          label: label(item),
+                          subtitle: subtitle?.call(item),
+                          trailing: t,
+                          onEdit: onEdit != null ? () => onEdit!(item) : null,
+                          onDelete: () => _confirmDelete(
+                            context,
+                            label(item),
+                            () => onDelete(item),
+                          ),
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
+                ),
+        ),
+      ],
     );
   }
 }
