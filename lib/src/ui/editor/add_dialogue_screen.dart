@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/dialogue_ai_service.dart';
+import '../../data/testing_checklist.dart';
 import '../../domain/blueprint_editor.dart';
 import '../../models/area.dart';
 import '../../models/character.dart';
@@ -1422,6 +1423,7 @@ class _GenerateEmotionLinesButtonState
       }
       if (mounted) setState(() => _generating = false);
       widget.onChanged();
+      TestingChecklist.instance.mark('ai_generate_dialogue');
     } catch (e) {
       if (mounted) {
         setState(() => _generating = false);
@@ -1727,6 +1729,7 @@ class _NodeCardState extends State<_NodeCard> {
         _suggestingLine = false;
       });
       widget.onChanged();
+      TestingChecklist.instance.mark('ai_generate_dialogue');
     } catch (e) {
       if (mounted) {
         setState(() => _suggestingLine = false);

@@ -30,7 +30,7 @@ class TestingChecklist extends ChangeNotifier {
     ChecklistItem('create_gamestate', 'Criar uma state flag', 'Editor'),
     ChecklistItem('create_dialogue', 'Criar um diálogo', 'Editor'),
     ChecklistItem('edit_dialogue', 'Editar um diálogo', 'Editor'),
-    ChecklistItem('ai_generate_dialogue', 'Gerar um diálogo com IA', 'Editor'),
+    ChecklistItem('ai_generate_dialogue', 'Gerar uma linha de diálogo com IA', 'Editor'),
     ChecklistItem('create_dialogue_group', 'Criar um grupo de diálogos', 'Editor'),
     ChecklistItem('create_event', 'Criar um evento', 'Editor'),
     ChecklistItem('edit_event', 'Editar um evento', 'Editor'),
