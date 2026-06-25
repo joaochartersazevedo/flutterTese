@@ -3,13 +3,16 @@ import 'package:flutter/material.dart';
 import '../../data/dialogue_ai_service.dart';
 import '../../data/testing_checklist.dart';
 import '../../domain/blueprint_editor.dart';
+import '../../logic/game_engine.dart';
 import '../../models/area.dart';
 import '../../models/character.dart';
 import '../../models/dialogue.dart';
 import '../../models/dialogue_group.dart';
 import '../../models/emotion.dart';
+import '../../models/save_data.dart';
 import '../../models/state_flag.dart';
 import '../app_theme.dart';
+import '../game/dialogue_box.dart';
 import '../game/settings_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,6 +167,47 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
         _selectedCharIds = _speakersInTree(_root).toList()..sort();
       });
 
+  /// Plays the current tree exactly like in-game, in a throwaway engine
+  /// seeded with just this dialogue and the world's characters — nothing
+  /// is saved and no preconditions/areas/groups are evaluated.
+  void _openPreview() {
+    final previewDialogue = Dialogue(
+      id: -1,
+      name: _nameCtrl.text.trim().isEmpty
+          ? 'Pré-visualização'
+          : _nameCtrl.text.trim(),
+      characterIds: _selectedCharIds,
+      parentNode: _root,
+      singleTrigger: false,
+      preconditions: const {},
+      consequences: const {},
+      topic: _topic.isEmpty ? null : _topic,
+    );
+    final save = SaveData(
+      saveName: 'preview',
+      timestamp: DateTime.now(),
+      startingAreaId: 1,
+      areas: const {},
+      connections: const {},
+      characters: Map.of(widget.editor.characters),
+      gamestates: const {},
+      dialogues: const {},
+      events: const {},
+      groups: const {},
+      elapsedMinutes: 0,
+      minutesSincePopulate: 0,
+      log: const [],
+      gameFlags: const {},
+      characterPositions: const {},
+    );
+    final engine = GameEngine(save)..previewDialogue(previewDialogue);
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (_) => _DialoguePreviewOverlay(engine: engine),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -182,6 +226,12 @@ class _AddDialogueScreenState extends State<AddDialogueScreen> {
             ),
           ),
           _AiKeyButton(),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: _openPreview,
+            icon: const Icon(Icons.play_arrow, size: 16),
+            label: const Text('Pré-visualizar'),
+          ),
           const SizedBox(width: 8),
           FilledButton.icon(
             onPressed: _submit,
@@ -2359,6 +2409,76 @@ class _AiKeyButton extends StatelessWidget {
               Navigator.pop(context);
             },
             child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DIALOGUE PREVIEW (plays the tree exactly like in-game)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DialoguePreviewOverlay extends StatefulWidget {
+  const _DialoguePreviewOverlay({required this.engine});
+  final GameEngine engine;
+
+  @override
+  State<_DialoguePreviewOverlay> createState() =>
+      _DialoguePreviewOverlayState();
+}
+
+class _DialoguePreviewOverlayState extends State<_DialoguePreviewOverlay> {
+  @override
+  void initState() {
+    super.initState();
+    widget.engine.addListener(_onEngineChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.engine.removeListener(_onEngineChanged);
+    super.dispose();
+  }
+
+  void _onEngineChanged() {
+    final ended =
+        widget.engine.currentLine == null && !widget.engine.emotionModeActive;
+    if (ended) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final engine = widget.engine;
+    return Dialog.fullscreen(
+      backgroundColor: Colors.transparent,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 16,
+            right: 16,
+            child: Material(
+              color: Colors.black54,
+              shape: const CircleBorder(),
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                tooltip: 'Fechar pré-visualização',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: engine.emotionModeActive
+                ? EmotionDialogueBox(engine: engine)
+                : DialogueBox(engine: engine),
           ),
         ],
       ),

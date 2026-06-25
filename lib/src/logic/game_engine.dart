@@ -239,6 +239,18 @@ class GameEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Starts [dialogue] immediately, ignoring preconditions/areas/activation
+  /// pool. Used by the dialogue editor's preview, where the engine instance
+  /// is throwaway and we want to play the tree exactly as authored.
+  void previewDialogue(Dialogue dialogue) {
+    _currentDialogue = dialogue;
+    _currentNode = dialogue.parentNode;
+    _stepCount = 0;
+    _totalSteps = _countChain(dialogue.parentNode);
+    _conversationHistory.clear();
+    notifyListeners();
+  }
+
   /// Player selected emotion at current choice node. Advances past it.
   void selectEmotion(int emotionId) {
     if (!emotionModeActive || _currentNode == null) return;
