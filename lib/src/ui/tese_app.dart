@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/app_preferences.dart';
@@ -41,7 +43,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool _inGame = false;
   bool _showingSaveSelection = true;
 
-  // Auto-save tracking
+  // Auto-save
+  Timer? _autoSaveTimer;
+
+  // Game auto-save tracking
   int? _lastAutoSaveAreaId;
 
   @override
@@ -53,6 +58,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       DialogueAiService.instance.setApiKey(savedKey);
     }
     _editor = BlueprintEditor();
+    _editor.addListener(_scheduleAutoSave);
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -70,6 +76,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _engine?.removeListener(_onEngineChanged);
     _editor.dispose();
@@ -160,16 +167,20 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
-  // ── Editor save ──────────────────────────────────────────────────────────
+  // ── Editor auto-save ─────────────────────────────────────────────────────
 
-  Future<void> _onEditorSave() async {
+  void _scheduleAutoSave() {
+    if (_currentSave == null || _inGame) return;
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer(const Duration(milliseconds: 600), _doAutoSave);
+  }
+
+  Future<void> _doAutoSave() async {
+    if (_currentSave == null || _inGame) return;
     final saveData = _buildCurrentSave();
     await SaveFileService.saveSave(saveData);
     if (mounted) {
       setState(() => _currentSave = saveData);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Guardado.')),
-      );
       TestingChecklist.instance.mark('save_world');
     }
   }
@@ -202,7 +213,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         builder: (context, _) => EditorMain(
           editor: _editor,
           onPlay: _launchGame,
-          onSave: _onEditorSave,
           onBack: () => setState(() => _showingSaveSelection = true),
         ),
       ),
